@@ -606,7 +606,7 @@ def plot(x, adata, datas, key='louvain'):
 
 def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
                  de_values=['names', 'scores', 'pvals_adj', 'logfoldchanges'],
-                 cell_values=[],
+                 cell_values=[], n_neighbors=5,
                  fill_alpha=0.1, show_hull=True):
     from bokeh.plotting import figure, show
     from bokeh.models import ColumnDataSource, Patches, Legend, CustomJS
@@ -618,6 +618,7 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
     from scipy.spatial import ConvexHull
     from collections import defaultdict
     from bokeh.layouts import layout, column, row
+    from sklearn import neighbors
 
     if 'rank_genes_groups' not in adata.uns_keys():
         raise ValueError('Run differential expression first.')
@@ -651,7 +652,11 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
     for k in cell_values:
         df[k] = list(map(str, adata.obs[k]))
 
-    conv_hulls = df.groupby(key).apply(lambda df: df.iloc[ConvexHull(np.vstack([df['x'], df['y']]).T).vertices])
+    knn = neighbors.KNeighborsClassifier(n_neighbors)
+    knn.fit(df[['x', 'y']], adata.obs[key])
+    df['prediction'] = knn.predict(df[['x', 'y']])
+
+    conv_hulls = df[df[key] == df['prediction']].groupby(key).apply(lambda df: df.iloc[ConvexHull(np.vstack([df['x'], df['y']]).T).vertices])
 
     palette = adata.uns.get(f'{key}_colors', viridis(len(adata.obs[key].unique())))
     key_col = adata.obs[key].astype('category') if adata.obs[key].dtype.name != 'category' else  adata.obs[key]
@@ -721,68 +726,130 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
 
     show(fig)
 
+    return hover_cell
 
-def _knn_dec_boundary(adata, basis='umap', components=[1, 2]):
-    pass
+def cmap_to_colors(cmap_vals):
+    return list(('#' + ''.join(map(lambda val: '{:02x}'.format(val).upper(), item[:-1])) for item in cmap_vals))
 
 
-
-
-def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], n_genes=100):
+def multi_link(adata, bases=['umap', 'pca'], components=[1, 2],
+               n_neighbors=5, markers=None,
+               highlight_only=None, palette=None):
     from scipy.spatial import distance_matrix 
     from bokeh.transform import linear_cmap
     from bokeh.palettes import magma 
+    from scipy.spatial import ConvexHull
+    from sklearn import neighbors
+    import matplotlib.cm as cm
+    import matplotlib
+    #from matplotlib.colors import LinearSegmentedColormap
+    #cmap = LinearSegmentedColormap.from_list('mycmap', adata.uns['louvain_colors'])
+
+    assert isinstance(palette, matplotlib.colors.Colormap), '`palette` must be instance of `matplotlib.colors.Colormap`'
+    assert len(components) == 2, f'`components` argument must be of length 2.'
 
     if not isinstance(components, np.ndarray):
         components = np.asarray(components)
 
-    df1 = pd.DataFrame(adata.obsm[f'X_{bases[0]}'][:, components - 1], columns=['x1', 'y1'])
-    df2 = pd.DataFrame(adata.obsm[f'X_{bases[1]}'][:, components - 1], columns=['x2', 'y2'])
+    if highlight_only is not None:
+        assert highlight_only in adata.obs_keys(), f'`{highlight_only}` is not in adata.obs_keys().'
 
-    dmat = pd.DataFrame(distance_matrix(adata.X[:, :n_genes], adata.X[:, :n_genes]), columns=list(map(str, range(adata.n_obs))))
-    df = pd.concat([df1, df2, dmat], axis=1)
+    if markers is None:
+        markers = markers = adata.var_names 
+
+    #df1 = pd.DataFrame(adata.obsm[f'X_{bases[0]}'][:, components - 1], columns=['x1', 'y1'])
+    #df2 = pd.DataFrame(adata.obsm[f'X_{bases[1]}'][:, components - 1], columns=['x2', 'y2'])
+
+    # code adapter from: https://stackoverflow.com/questions/45075638/graph-k-nn-decision-boundaries-in-matplotlib
+    #knn = neighbors.KNeighborsClassifier(n_neighbors)
+    #knn.fit(df1, adata.obs['louvain'])
+    #h = 0.1
+    #x_min, x_max = df1['x1'].min() - 1, df1['x1'].max() + 1
+    #y_min, y_max = df1['y1'].min() - 1, df1['y1'].max() + 1
+
+    #yy, xx = np.mgrid[slice(x_min, x_max, h),
+    #                  slice(y_min, y_max, h)]
+    #zz = knn.predict(np.c_[np.ravel(xx), np.ravel(yy)])
+    #zz = np.reshape(zz, xx.shape)
+
+    #zz2 = knn.predict(df1)
+    #df1['key_predict'] = zz2
+
+    # Put the result into a color plot
+    #for i, cat in enumerate(adata.obs['louvain'].cat.categories):
+    #    zz[zz == cat] = str(i)
+    #zz = zz.astype(np.int)
+
+    #plt.figure()
+    #plt.pcolormesh(xx, yy, zz, cmap=cmap)
+
+    gene_subset = np.in1d(adata.var_names, markers)
+    dmat = pd.DataFrame(distance_matrix(adata.X[:, gene_subset],
+                                        adata.X[:, gene_subset]),
+                        columns=list(map(str, range(adata.n_obs))))
+    df = pd.concat([pd.DataFrame(adata.obsm[f'X_{base}'][:, components - (base != 'diffmap')], columns=[f'x{i}', f'y{i}'])
+                    for i, base in enumerate(bases)] + [dmat], axis=1)
     df['color'] = np.nan
     df['index'] = range(len(df))
+    df['hl_key'] = list(adata.obs[highlight_only]) if highlight_only is not None else 0
 
     ds = ColumnDataSource(df)
-    mapper = linear_cmap(field_name='color', palette=magma(256), low=df['0'].min(), high=df['0'].max())
+    start_ix = str(adata.uns.get('iroot', 0))
+    mapper = linear_cmap(field_name='color', palette=cmap_to_colors((cm.RdYlBu if palette is None else palette)(range(256), 1., bytes=True)),
+                         low=df[start_ix].min(), high=df[start_ix].max())
 
-    fig1 = figure(tools='pan, wheel_zoom', title='umap', plot_width=400, plot_height=400)
-    s1 = fig1.scatter('x1', 'y1', source=ds, line_color=mapper,color=mapper, hover_color='black', size=5, line_width=10, line_alpha=0)
-    fig2 = figure(title='pca', plot_width=400, plot_height=400)
-    s2 = fig2.scatter('x2', 'y2', source=ds, line_color=mapper,color=mapper, size=5)
-    s1.glyph.js_link('fill_alpha', s2.glyph, 'fill_alpha')
+    figs, renderers = [], []
+    for i, basis in enumerate(bases):
+        fig = figure(tools='pan, reset, save, ' + ('zoom_in, zoom_out' if i == 0 else 'wheel_zoom'),
+                     title=basis, plot_width=400, plot_height=400)
+        scatter = fig.scatter(f'x{i}', f'y{i}', source=ds, line_color=mapper,color=mapper,
+                          hover_color='black', size=6, line_width=8, line_alpha=0)
+        figs.append(fig)
+        renderers.append(scatter)
+    fig = figs[0]
 
-    slider = Slider(start=0, end=10, value=5, step=0.01,
+    end = dmat.max().max()
+    slider = Slider(start=0, end=end, value=end / 2, step=end / 1000,
             title='Distance')
-    slider.callback = CustomJS(args={'slider': slider, 'mapper': mapper['transform']}, code='''
+    col_ds = ColumnDataSource(dict(value=[start_ix]))
+    slider.callback = CustomJS(args={'slider': slider, 'mapper': mapper['transform'], 'source': ds, 'col': col_ds}, code='''
         mapper.high = slider.value;
+        var first = col.data['value']
+        source.data['color'] = source.data[first].map(
+            (x, i) => { return isNaN(x) ||
+                        x > slider.value || 
+                        source.data['hl_key'][first] != source.data['hl_key'][i]  ? NaN : x; }
+        );
     ''')
-    h_tool = HoverTool(renderers=[s1, s2], tooltips=[], show_arrow=False)
-    h_tool.callback = CustomJS(args=dict(source=ds, slider=slider), code='''
+
+    h_tool = HoverTool(renderers=renderers, tooltips=[], show_arrow=False)
+    h_tool.callback = CustomJS(args=dict(source=ds, slider=slider, col=col_ds), code='''
         var indices = cb_data.index['1d'].indices;
         if (indices.length == 0) {
             source.data['color'] = source.data['color'];
         } else {
             first = indices[0];
             source.data['color'] = source.data[first];
-            source.data['color'] = source.data['color'].map((x) => { return isNaN(x) || x > slider.value ? NaN : x; })
+            source.data['color'] = source.data['color'].map(
+                (x, i) => { return isNaN(x) ||
+                            x > slider.value || 
+                            source.data['hl_key'][first] != source.data['hl_key'][i]  ? NaN : x; }
+            );
+            col.data['value'] = first;
+            col.change.emit();
         }
-        //console.log(source.data['color']);
-        //console.log(indices);
-        //console.log(slider.value);
         source.change.emit();
     ''')
-    fig1.add_tools(h_tool)
+    fig.add_tools(h_tool)
 
-    color_bar = ColorBar(color_mapper=mapper['transform'], width=8,  location=(0,0))
-    fig1.add_layout(color_bar, 'left')
-    fig1.add_tools(h_tool)
-    show(column(slider, row(fig1, fig2)))
+    color_bar = ColorBar(color_mapper=mapper['transform'], width=8, location=(0,0))
+    fig.add_layout(color_bar, 'left')
 
-    return h_tool
+    fig.add_tools(h_tool)
+    show(column(slider, row(*figs)))
 
-#import bokeh.core.enums as bke
+    return slider
+
 
 if __name__ == '__main__':
     pass
