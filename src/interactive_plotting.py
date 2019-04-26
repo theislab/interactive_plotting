@@ -400,6 +400,7 @@ def pred_exp(X_test, y_test):
 def check_cons(adata,
               genes=None,
               n_points=100,
+              paths=[],
               n_velocity_genes=5,
               smooth=True,
               length_scale=0.2,
@@ -593,7 +594,7 @@ def plot(x, adata, datas, key='louvain'):
                     x_mean = ds['x_mean']
                     x_cov = ds['x_cov']
                     band_x = np.append(ds['x_test'][::-1], ds['x_test'])
-                    band_y = np.append((x_mean - 2 * np.sqrt(np.diag(x_cov)))[::-1], (x_mean + 2 * np.sqrt(np.diag(x_cov))))
+                    band_y = np.append((x_mean - np.sqrt(np.diag(x_cov)))[::-1], (x_mean + np.sqrt(np.diag(x_cov))))
                     fig.patch(band_x, band_y, alpha=0.1, line_color='black', fill_color='black', legend=gene, line_dash='dotdash',
                                                   muted_alpha=0)
             if ds.get('x_grad') is not None:
@@ -605,7 +606,7 @@ def plot(x, adata, datas, key='louvain'):
 
 
 def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
-                 de_values=['names', 'scores', 'pvals_adj', 'logfoldchanges'],
+                 de_values='names, scores, pvals_adj, logfoldchanges',
                  cell_values=[], n_neighbors=5,
                  fill_alpha=0.1, show_hull=True):
     from bokeh.plotting import figure, show
@@ -719,22 +720,19 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
     else:
         fig.add_tools(hover_group)
 
-
     legend = Legend(items=list(legend_dict.items()), location='top_right')
     fig.add_layout(legend)
     fig.legend.click_policy = 'hide'
 
     show(fig)
 
-    return hover_cell
 
 def cmap_to_colors(cmap_vals):
     return list(('#' + ''.join(map(lambda val: '{:02x}'.format(val).upper(), item[:-1])) for item in cmap_vals))
 
 
-def multi_link(adata, bases=['umap', 'pca'], components=[1, 2],
-               n_neighbors=5, markers=None,
-               highlight_only=None, palette=None):
+def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], markers=None,
+               fade=True, highlight_only=None, palette=None):
     from scipy.spatial import distance_matrix 
     from bokeh.transform import linear_cmap
     from bokeh.palettes import magma 
@@ -742,8 +740,6 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2],
     from sklearn import neighbors
     import matplotlib.cm as cm
     import matplotlib
-    #from matplotlib.colors import LinearSegmentedColormap
-    #cmap = LinearSegmentedColormap.from_list('mycmap', adata.uns['louvain_colors'])
 
     assert isinstance(palette, matplotlib.colors.Colormap), '`palette` must be instance of `matplotlib.colors.Colormap`'
     assert len(components) == 2, f'`components` argument must be of length 2.'
@@ -757,32 +753,6 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2],
     if markers is None:
         markers = markers = adata.var_names 
 
-    #df1 = pd.DataFrame(adata.obsm[f'X_{bases[0]}'][:, components - 1], columns=['x1', 'y1'])
-    #df2 = pd.DataFrame(adata.obsm[f'X_{bases[1]}'][:, components - 1], columns=['x2', 'y2'])
-
-    # code adapter from: https://stackoverflow.com/questions/45075638/graph-k-nn-decision-boundaries-in-matplotlib
-    #knn = neighbors.KNeighborsClassifier(n_neighbors)
-    #knn.fit(df1, adata.obs['louvain'])
-    #h = 0.1
-    #x_min, x_max = df1['x1'].min() - 1, df1['x1'].max() + 1
-    #y_min, y_max = df1['y1'].min() - 1, df1['y1'].max() + 1
-
-    #yy, xx = np.mgrid[slice(x_min, x_max, h),
-    #                  slice(y_min, y_max, h)]
-    #zz = knn.predict(np.c_[np.ravel(xx), np.ravel(yy)])
-    #zz = np.reshape(zz, xx.shape)
-
-    #zz2 = knn.predict(df1)
-    #df1['key_predict'] = zz2
-
-    # Put the result into a color plot
-    #for i, cat in enumerate(adata.obs['louvain'].cat.categories):
-    #    zz[zz == cat] = str(i)
-    #zz = zz.astype(np.int)
-
-    #plt.figure()
-    #plt.pcolormesh(xx, yy, zz, cmap=cmap)
-
     gene_subset = np.in1d(adata.var_names, markers)
     dmat = pd.DataFrame(distance_matrix(adata.X[:, gene_subset],
                                         adata.X[:, gene_subset]),
@@ -795,7 +765,8 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2],
 
     ds = ColumnDataSource(df)
     start_ix = str(adata.uns.get('iroot', 0))
-    mapper = linear_cmap(field_name='color', palette=cmap_to_colors((cm.RdYlBu if palette is None else palette)(range(256), 1., bytes=True)),
+    palette =cm.RdYlBu if palette is None else palette
+    mapper = linear_cmap(field_name='color', palette=cmap_to_colors(palette(range(palette.N), 1., bytes=True)),
                          low=df[start_ix].min(), high=df[start_ix].max())
 
     figs, renderers = [], []
@@ -812,43 +783,40 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2],
     slider = Slider(start=0, end=end, value=end / 2, step=end / 1000,
             title='Distance')
     col_ds = ColumnDataSource(dict(value=[start_ix]))
-    slider.callback = CustomJS(args={'slider': slider, 'mapper': mapper['transform'], 'source': ds, 'col': col_ds}, code='''
+    update_color_code = f'''
+        source.data['color'] = source.data[first].map(
+            (x, i) => {{ return isNaN(x) ||
+                        {'' if fade else 'x > slider.value || '}
+                        source.data['hl_key'][first] != source.data['hl_key'][i]  ? NaN : x; }}
+        );
+    '''
+    slider.callback = CustomJS(args={'slider': slider, 'mapper': mapper['transform'], 'source': ds, 'col': col_ds}, code=f'''
         mapper.high = slider.value;
         var first = col.data['value']
-        source.data['color'] = source.data[first].map(
-            (x, i) => { return isNaN(x) ||
-                        x > slider.value || 
-                        source.data['hl_key'][first] != source.data['hl_key'][i]  ? NaN : x; }
-        );
+        {update_color_code}
     ''')
 
     h_tool = HoverTool(renderers=renderers, tooltips=[], show_arrow=False)
-    h_tool.callback = CustomJS(args=dict(source=ds, slider=slider, col=col_ds), code='''
+    h_tool.callback = CustomJS(args=dict(source=ds, slider=slider, col=col_ds), code=f'''
         var indices = cb_data.index['1d'].indices;
-        if (indices.length == 0) {
+        if (indices.length == 0) {{
             source.data['color'] = source.data['color'];
-        } else {
+        }} else {{
             first = indices[0];
             source.data['color'] = source.data[first];
-            source.data['color'] = source.data['color'].map(
-                (x, i) => { return isNaN(x) ||
-                            x > slider.value || 
-                            source.data['hl_key'][first] != source.data['hl_key'][i]  ? NaN : x; }
-            );
+            {update_color_code}
             col.data['value'] = first;
             col.change.emit();
-        }
+        }}
         source.change.emit();
     ''')
     fig.add_tools(h_tool)
 
-    color_bar = ColorBar(color_mapper=mapper['transform'], width=8, location=(0,0))
+    color_bar = ColorBar(color_mapper=mapper['transform'], width=12, location=(0,0))
     fig.add_layout(color_bar, 'left')
 
     fig.add_tools(h_tool)
     show(column(slider, row(*figs)))
-
-    return slider
 
 
 if __name__ == '__main__':
