@@ -397,18 +397,14 @@ def pred_exp(X_test, y_test):
     return y_pred
 
 
-def check_cons(adata,
-              genes=None,
-              n_points=100,
-              paths=[],
+def plot_velocity(adata,genes=None,paths=[],
               n_velocity_genes=5,
               smooth=True,
               length_scale=0.2,
               mode='gp',
               differentiate=True,
               return_values=False,
-              return_scores=False,
-              exp_key='Ms',
+              exp_key='X',
               velo_key_ss='velocity',
               velo_key_dyn='velocity_dynamical',
               scatter_kwgs=None,
@@ -436,9 +432,7 @@ def check_cons(adata,
         Whether to take the derivative of gene expression
     return_values: bool, optional (default: `False`)
         Whether to return computed values
-    return_scores: bool, optional (default: `False`)
-        Whether to return computed goodness-of-velocity scores
-    exp_key: str, optional (default:`"ms"`)
+    exp_key: str, optional (default:`'X'"`)
         key from adata.layers or just 'X' to get gene expression values
     velo_key_ss, velo_key_dyn: str, optional (default: `"velocity"`)
         key from adata.layers to get velocity  values for the steady state (ss)
@@ -475,7 +469,7 @@ def check_cons(adata,
 
     # check the genes list
     if genes is None:
-        genes = adata[:, adata.var['velocity_genes'] == True].var_names[:n_velocity_genes]
+        genes = adata[:, adata.var['velocity_genes']].var_names[:n_velocity_genes]
     else:
         # check whether all of those genes exist in the adata object
         genes_indicator = [gene in adata.var_names for gene in genes]
@@ -487,82 +481,87 @@ def check_cons(adata,
     print(f'Plotting the following genes: `{list(genes)}`.\n')
 
     # extract pseudotime
-    dpt = adata.obs['dpt_pseudotime']
 
     # loop over genes
     from collections import defaultdict
-    data = defaultdict(list)
 
     for gene in genes:
-        if exp_key != 'X':
-            gene_exp = adata[:, gene].layers[exp_key]
-        else:
-            gene_exp = adata.raw[:, gene].X
-        # exclude dropouts
-        ix = (gene_exp > 0)
+        data = defaultdict(list)
+        for path in paths:
+            path_ix = np.in1d(adata.obs[plot_key], path)
+            ad = adata[path_ix].copy()
+            if exp_key != 'X':
+                gene_exp = ad[:, gene].layers[exp_key]
+            else:
+                gene_exp = ad.raw[:, gene].X
+            # exclude dropouts
+            ix = (gene_exp > 0)
+            dpt = ad.obs['dpt_pseudotime']
 
-        #velo_exp_ss = adata[:, gene].layers[velo_key_ss]
-        #velo_exp_dyn = adata[:, gene].layers[velo_key_dyn]
+            #velo_exp_ss = ad[:, gene].layers[velo_key_ss]
+            #velo_exp_dyn = ad[:, gene].layers[velo_key_dyn]
 
-        if issparse(gene_exp): gene_exp = gene_exp.A
-        #if issparse(velo_exp_ss): velo_exp_ss = velo_exp_ss.A
-        #if issparse(velo_exp_dyn): velo_exp_dyn = velo_exp_dyn.A
-        gene_exp = gene_exp.flatten()
-        #data['expr'].append(gene_exp[ix]) this results in wrong coloring
-        data['expr'].append(gene_exp)
-        #data['velo_expr_ss'].append(velo_exp_ss)
-        #data['velo_expr_dyn'].append(velo_exp_dyn)
+            if issparse(gene_exp):
+                gene_exp = gene_exp.A
+            #if issparse(velo_exp_ss): velo_exp_ss = velo_exp_ss.A
+            #if issparse(velo_exp_dyn): velo_exp_dyn = velo_exp_dyn.A
+            gene_exp = gene_exp.flatten()
+            data['expr'].append(gene_exp)
+            #data['velo_expr_ss'].append(velo_exp_ss)
+            #data['velo_expr_dyn'].append(velo_exp_dyn)
 
-        # scale the steady state velocities
-        #scaling_factor, _ = shift_scale(velo_exp_ss, velo_exp_dyn, fit_intercept=False)
-        #velo_exp_ss = scaling_factor * velo_exp_ss
+            # scale the steady state velocities
+            #scaling_factor, _ = shift_scale(velo_exp_ss, velo_exp_dyn, fit_intercept=False)
+            #velo_exp_ss = scaling_factor * velo_exp_ss
 
-        # compute smoothed values from expression
-            # gene expression
-        if smooth:
-            assert all(gene_exp[ix] > 0)
-            x_test, exp_mean, exp_cov = smooth_expression(dpt[ix, None], gene_exp[ix], mode=mode,
-                n_points=n_points, kernel_params=dict(k=dict(length_scale=length_scale)))
-                                                      
-            data['x_test'].append(x_test)
-            data['x_mean'].append(exp_mean)
-            data['x_cov'].append(exp_cov)
-        continue
+            # compute smoothed values from expression
+                # gene expression
+            data['dpt'].append(list(dpt))
+            data[plot_key].append(list(ad.obs[plot_key]))
+            if smooth:
+                assert all(gene_exp[ix] > 0)
+                x_test, exp_mean, exp_cov = smooth_expression(dpt[ix, None], gene_exp[ix], mode=mode,
+                    n_points=len(dpt), kernel_params=dict(k=dict(length_scale=length_scale)))
+                                                          
+                data['x_test'].append(x_test)
+                data['x_mean'].append(exp_mean)
+                data['x_cov'].append(exp_cov)
+            continue
 
-        if differentiate:
-            if not smooth:
-                raise ValueError('You must smooth the data to do compute derivatives.')
+            if differentiate:
+                if not smooth:
+                    raise ValueError('You must smooth the data to do compute derivatives.')
 
-            print('Taking the derivative of gene expression...')
-            spacing = x_test[1, 0] - x_test[0, 0]
-            gene_grad = np.gradient(exp_mean, spacing)
-            data['gene_grad'].append(gene_grad)
+                print('Taking the derivative of gene expression...')
+                spacing = x_test[1, 0] - x_test[0, 0]
+                gene_grad = np.gradient(exp_mean, spacing)
+                data['gene_grad'].append(gene_grad)
 
-            # compute goodness-of-velocities measure
-            x_obs_ss = np.concatenate((dpt[:, None], velo_exp_ss[:, None]), axis=1)
-            x_obs_dyn = np.concatenate((dpt[:, None], velo_exp_dyn[:, None]), axis=1)
-            x_theo = np.concatenate((x_test, gene_grad[:, None]), axis=1)
+                # compute goodness-of-velocities measure
+                x_obs_ss = np.concatenate((dpt[:, None], velo_exp_ss[:, None]), axis=1)
+                x_obs_dyn = np.concatenate((dpt[:, None], velo_exp_dyn[:, None]), axis=1)
+                x_theo = np.concatenate((x_test, gene_grad[:, None]), axis=1)
 
-            weights = 1/np.sqrt(np.diag(exp_cov))
-            weights = weights/sum(weights)
+                weights = 1/np.sqrt(np.diag(exp_cov))
+                weights = weights/sum(weights)
 
-            score_ss = compute_dist(x_obs_ss, x_theo, weights)
-            score_dyn = compute_dist(x_obs_dyn, x_theo, weights)
+                score_ss = compute_dist(x_obs_ss, x_theo, weights)
+                score_dyn = compute_dist(x_obs_dyn, x_theo, weights)
 
-            data['score_ss'].append(score_ss)
-            data['score_dyn'].append(score_dyn)
+                data['score_ss'].append(score_ss)
+                data['score_dyn'].append(score_dyn)
 
-            print('ss_score = {:2.2e}\ndyn_score = {:2.2e}'.format(score_ss, score_dyn))
+                print('ss_score = {:2.2e}\ndyn_score = {:2.2e}'.format(score_ss, score_dyn))
 
-    data = pd.DataFrame(data, index=genes)
+        df = pd.DataFrame(data, index=list(map(lambda path: ', '.join(path), paths)))
 
-    if plotting:
-        plot(dpt, adata, data, key=plot_key)
+        if plotting:
+            plot(adata, df, key=plot_key)
 
     if return_values:
         return data
 
-def plot(x, adata, datas, key='louvain'):
+def plot(adata, dataframes, key='louvain'):
     from bokeh.plotting import figure, show
     from bokeh.models import ColumnDataSource, ColorBar
     from bokeh.transform import linear_cmap, factor_mark, factor_cmap
@@ -574,16 +573,11 @@ def plot(x, adata, datas, key='louvain'):
     fig = figure(title=key)
 
     palette = adata.uns.get(f'{key}_colors', viridis(len(adata.obs[key].unique())))
-    key_col = adata.obs[key].astype('category') if adata.obs[key].dtype.name != 'category' else  adata.obs[key]
+    key_col = adata.obs[key].astype('category') if adata.obs[key].dtype.name != 'category' else adata.obs[key]
     mapper = CategoricalColorMapper(palette=palette, factors=list(map(str, key_col.cat.categories)))
 
-    for i, (marker, (gene, df)) in enumerate(zip(markers, datas.iterrows())):
-        df['dpt'] = x
+    for i, (marker, (gene, df)) in enumerate(zip(markers, dataframes.iterrows())):
         ds = dict(df.copy())
-        for k in list(ds.keys()):
-            if ds[k] is None:
-                del ds[k]
-        ds[key] = list(map(str, adata.obs[key]))
         source = ColumnDataSource(ds)
         fig.scatter('dpt', 'expr', source=source, color={'field': key, 'transform': mapper},
                         marker=marker, size=10, legend=f'{gene}', muted_alpha=0)
