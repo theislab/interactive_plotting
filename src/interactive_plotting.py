@@ -1,24 +1,30 @@
 #!/usr/bin/env python3
 
-
-from bokeh.palettes import Set1, Set2, Set3
 from sklearn.gaussian_process.kernels import *
+from sklearn import neighbors
+from scipy.sparse import issparse
+from scipy.spatial import distance_matrix, ConvexHull
 
+from functools import reduce
+from collections import defaultdict
+from itertools import product
 
 import numpy as np
 import pandas as pd
 import scanpy as sc
+
+import matplotlib.cm as cm
+import matplotlib
+
 from bokeh.plotting import figure, show
-from bokeh.models import ColumnDataSource, Patches, Legend, CustomJS
+from bokeh.models import ColumnDataSource, Slider, HoverTool, ColorBar, Patches, Legend, CustomJS
+from bokeh.models.mappers import CategoricalColorMapper
+from bokeh.layouts import layout, column, row
 from bokeh.transform import linear_cmap, factor_mark, factor_cmap
 from bokeh.core.enums import MarkerType
-from bokeh.palettes import viridis
-from bokeh.models.mappers import CategoricalColorMapper
-from bokeh.models import HoverTool
-from scipy.spatial import ConvexHull
-from collections import defaultdict
-from bokeh.layouts import layout, column, row
-from bokeh.models import Slider, ColorBar
+from bokeh.palettes import Set1, Set2, Set3, viridis
+from bokeh.models.widgets import CheckboxGroup
+from bokeh.models.widgets.buttons import Button
 
 
 _inter_hist_js_code="""
@@ -102,19 +108,6 @@ def interactive_histograms(adata, keys=['n_counts', 'n_genes'],
     None
     """
 
-    from itertools import product
-    from functools import reduce
-    from bokeh.plotting import figure, show, ColumnDataSource
-    from bokeh.models.widgets import CheckboxGroup
-    from bokeh.models.widgets.buttons import Button
-    from bokeh.models import Slider
-    from bokeh.models.callbacks import CustomJS
-    from bokeh.io import output_notebook
-    from bokeh.layouts import layout, column, row
-
-    from copy import copy
-    from numpy import array_split, ceil
-    output_notebook()
 
     if min_bins < 1:
         raise ValueError(f'Expected min_bins >= 1, got min_bins={min_bins}.')
@@ -238,7 +231,7 @@ def interactive_histograms(adata, keys=['n_counts', 'n_genes'],
     # transform list of pairs of figures and sliders into list of lists, where
     # each sublist has length <= 2
     # note that bokeh does not like np.arrays
-        grid = list(map(list, array_split(cols, ceil(len(cols) / 2))))
+        grid = list(map(list, np.array_split(cols, np.ceil(len(cols) / 2))))
 
         show(layout(children=grid, sizing_mode='fixed', ncols=2))
 
@@ -246,8 +239,10 @@ def interactive_histograms(adata, keys=['n_counts', 'n_genes'],
 def smooth_expression(x, y, n_points=100, mode='gp', kernel_params=dict(), kernel_default_params=dict(),
                      kernel_expr=None, suppress=False, **opt_params):
 
-    import ast
+    from sklearn.kernel_ridge import KernelRidge
+    from sklearn.gaussian_process import GaussianProcessRegressor
     import operator as op
+    import ast
 
     def _eval(node):
         if isinstance(node, ast.Num):
@@ -283,7 +278,6 @@ def smooth_expression(x, y, n_points=100, mode='gp', kernel_params=dict(), kerne
     x_test = np.linspace(0, 1, n_points)[:, None]
 
     if mode == 'krr':
-        from sklearn.kernel_ridge import KernelRidge
         gamma = opt_params.pop('gamma', None)
 
         if gamma is None:
@@ -297,7 +291,6 @@ def smooth_expression(x, y, n_points=100, mode='gp', kernel_params=dict(), kerne
         return x_test, model.predict(x_test), None
 
     if mode == 'gp':
-        from sklearn.gaussian_process import GaussianProcessRegressor
 
         if kernel_expr is None:
             assert len(kernel_params) == 1
@@ -455,17 +448,16 @@ def plot_velocity(adata,genes=None,paths=[],
         dyn velocities
     """
 
-    from scipy.sparse import issparse
 
     # check the input
     if 'dpt_pseudotime' not in adata.obs.keys():
-        raise ValueError('Compute DPT first.')
+        raise ValueError('Compute `dpt` first.')
     if velo_key_ss not in adata.layers.keys():
         pass
-        #raise ValueError('Compute {}'.format(velo_key_ss))
+        #raise ValueError(f'Compute `{velo_key_ss}` first.')
     if velo_key_dyn not in adata.layers.keys():
         pass
-        #raise ValueError('Compute {}'.format(velo_key_dyn))
+        #raise ValueError(f'Compute `{velo_key_dyn}` first.')
 
     # check the genes list
     if genes is None:
@@ -478,13 +470,11 @@ def plot_velocity(adata,genes=None,paths=[],
             print(f'Could not find the following genes: `{genes_missing}`.')
             genes = list(np.array(genes)[genes_indicator])
 
-    print(f'Plotting the following genes: `{list(genes)}`.\n')
-
     # extract pseudotime
 
     # loop over genes
-    from collections import defaultdict
 
+    figs = []
     for gene in genes:
         data = defaultdict(list)
         for path in paths:
@@ -556,18 +546,14 @@ def plot_velocity(adata,genes=None,paths=[],
         df = pd.DataFrame(data, index=list(map(lambda path: ', '.join(path), paths)))
 
         if plotting:
-            plot(adata, df, key=plot_key)
+            figs.append(create_velocity_figure(adata, df, key=plot_key))
+
+    show(column(*figs))
 
     if return_values:
         return data
 
-def plot(adata, dataframes, key='louvain'):
-    from bokeh.plotting import figure, show
-    from bokeh.models import ColumnDataSource, ColorBar
-    from bokeh.transform import linear_cmap, factor_mark, factor_cmap
-    from bokeh.core.enums import MarkerType
-    from bokeh.palettes import viridis
-    from bokeh.models.mappers import CategoricalColorMapper
+def create_velocity_figure(adata, dataframes, key):
     
     markers = [marker for marker in MarkerType if marker not in ['circle_cross', 'circle_x']] * 10
     fig = figure(title=key)
@@ -596,24 +582,14 @@ def plot(adata, dataframes, key='louvain'):
 
 
     fig.legend.click_policy = 'mute'
-    show(fig)
+
+    return fig
 
 
 def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
                  de_values='names, scores, pvals_adj, logfoldchanges',
                  cell_values=[], n_neighbors=5,
                  fill_alpha=0.1, show_hull=True):
-    from bokeh.plotting import figure, show
-    from bokeh.models import ColumnDataSource, Patches, Legend, CustomJS
-    from bokeh.transform import linear_cmap, factor_mark, factor_cmap
-    from bokeh.core.enums import MarkerType
-    from bokeh.palettes import viridis
-    from bokeh.models.mappers import CategoricalColorMapper
-    from bokeh.models import HoverTool
-    from scipy.spatial import ConvexHull
-    from collections import defaultdict
-    from bokeh.layouts import layout, column, row
-    from sklearn import neighbors
 
     if 'rank_genes_groups' not in adata.uns_keys():
         raise ValueError('Run differential expression first.')
@@ -727,13 +703,6 @@ def cmap_to_colors(cmap_vals):
 
 def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], markers=None,
                fade=True, highlight_only=None, palette=None):
-    from scipy.spatial import distance_matrix 
-    from bokeh.transform import linear_cmap
-    from bokeh.palettes import magma 
-    from scipy.spatial import ConvexHull
-    from sklearn import neighbors
-    import matplotlib.cm as cm
-    import matplotlib
 
     assert isinstance(palette, matplotlib.colors.Colormap), '`palette` must be instance of `matplotlib.colors.Colormap`'
     assert len(components) == 2, f'`components` argument must be of length 2.'
