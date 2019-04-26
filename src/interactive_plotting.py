@@ -64,7 +64,7 @@ _inter_hist_js_code="""
 
 
 def interactive_histograms(adata, keys=['n_counts', 'n_genes'],
-                           bins=100, min_bins=1, max_bins=1000,
+                           bins='auto', min_bins=1, max_bins=1000,
                            tools='pan, reset, wheel_zoom, save',
                            groups=None, fill_alpha=0.4,
                            palette=Set1[9] + Set2[8] + Set3[12],
@@ -81,8 +81,8 @@ def interactive_histograms(adata, keys=['n_counts', 'n_genes'],
         annotated data object
     keys: list, optional (default: `["n_counts", "n_genes"]`)
         keys in adata.obs or adata.var where the distibutions are stored
-    bins: int, optional (default: `100`)
-        number of bins used for plotting
+    bins: int, str, optional (default: `auto`)
+        number of bins used for plotting or str from numpy.histogram
     min_bins: int, optional (default: `1`)
         minimum number of bins possible
     max_bins: int, optional (default: `1000`)
@@ -113,8 +113,6 @@ def interactive_histograms(adata, keys=['n_counts', 'n_genes'],
         raise ValueError(f'Expected min_bins >= 1, got min_bins={min_bins}.')
     if max_bins < min_bins:
         raise ValueError(f'Expected min_bins <= max_bins, got min_bins={min_bins}, max_bins={max_bins}.')
-    if not (bins >= min_bins and bins <= max_bins):
-        raise ValueError(f'Expected min_bins <= bins <= max_bins, got min_bins={min_bins}, bins={bins}, max_bins={max_bins}.')
 
     # check the input
     for key in keys:
@@ -148,10 +146,9 @@ def interactive_histograms(adata, keys=['n_counts', 'n_genes'],
         # create histogram
         cols, legends, callbacks = [], [], []
         plot_map = dict()
-        slider = Slider(start=min_bins, end=max_bins, value=bins, step=1,
-                        title='Bins')
-
         fig = figure(*args, tools=tools, **kwargs)
+        slider = Slider(start=min_bins, end=max_bins, value=0, step=1,
+                        title='Bins')
 
         plot_ids = []
         for j, (ad, group_vs) in enumerate(zip(adatas, group_v_combs)):
@@ -171,6 +168,8 @@ def interactive_histograms(adata, keys=['n_counts', 'n_genes'],
             else:
                 orig = ad[:, key].X
                 hist, edges = np.histogram(orig, density=True, bins=bins)
+
+            slider.value = len(hist)
 
             # original data, used for recalculation of histogram in JS code
             orig = ColumnDataSource(data=dict(values=orig))
@@ -401,7 +400,8 @@ def plot_velocity(adata,genes=None,paths=[],
               velo_key_ss='velocity',
               velo_key_dyn='velocity_dynamical',
               scatter_kwgs=None,
-              plot_key='louvain',
+              color_key='louvain',
+              path_key='louvain',
               plotting=True):
     """Plotting function which shows expression level as well as velocity per gene as a function of DPT.
     Aim here is to check for the consistency of the computed velocities
@@ -448,6 +448,9 @@ def plot_velocity(adata,genes=None,paths=[],
         dyn velocities
     """
 
+    for path in paths:
+        for p in path:
+            assert p in adata.obs[path_key].cat.categories, f'`{p}` is not in `adata.obs[path_key]`. Possible values are: `{list(adata.obs[path_key].cat.categories)}`.'
 
     # check the input
     if 'dpt_pseudotime' not in adata.obs.keys():
@@ -470,15 +473,14 @@ def plot_velocity(adata,genes=None,paths=[],
             print(f'Could not find the following genes: `{genes_missing}`.')
             genes = list(np.array(genes)[genes_indicator])
 
-    # extract pseudotime
 
-    # loop over genes
+    mapper = create_mapper(adata, color_key)
 
     figs = []
     for gene in genes:
         data = defaultdict(list)
         for path in paths:
-            path_ix = np.in1d(adata.obs[plot_key], path)
+            path_ix = np.in1d(adata.obs[path_key], path)
             ad = adata[path_ix].copy()
             if exp_key != 'X':
                 gene_exp = ad[:, gene].layers[exp_key]
@@ -507,7 +509,7 @@ def plot_velocity(adata,genes=None,paths=[],
             # compute smoothed values from expression
                 # gene expression
             data['dpt'].append(list(dpt))
-            data[plot_key].append(list(ad.obs[plot_key]))
+            data[color_key].append(list(ad.obs[color_key]))
             if smooth:
                 assert all(gene_exp[ix] > 0)
                 x_test, exp_mean, exp_cov = smooth_expression(dpt[ix, None], gene_exp[ix], mode=mode,
@@ -543,40 +545,47 @@ def plot_velocity(adata,genes=None,paths=[],
 
                 print('ss_score = {:2.2e}\ndyn_score = {:2.2e}'.format(score_ss, score_dyn))
 
-        df = pd.DataFrame(data, index=list(map(lambda path: ', '.join(path), paths)))
+        dataframe = pd.DataFrame(data, index=list(map(lambda path: ', '.join(path), paths)))
 
         if plotting:
-            figs.append(create_velocity_figure(adata, df, key=plot_key))
+            figs.append(create_velocity_figure(dataframe, color_key, title=gene, color_mapper=mapper))
 
     show(column(*figs))
 
     if return_values:
         return data
 
-def create_velocity_figure(adata, dataframes, key):
-    
-    markers = [marker for marker in MarkerType if marker not in ['circle_cross', 'circle_x']] * 10
-    fig = figure(title=key)
 
+def create_mapper(adata, key):
+    # TODO:
+    # plate colors return float
     palette = adata.uns.get(f'{key}_colors', viridis(len(adata.obs[key].unique())))
     key_col = adata.obs[key].astype('category') if adata.obs[key].dtype.name != 'category' else adata.obs[key]
-    mapper = CategoricalColorMapper(palette=palette, factors=list(map(str, key_col.cat.categories)))
+    return CategoricalColorMapper(palette=palette, factors=list(map(str, key_col.cat.categories)))
 
-    for i, (marker, (gene, df)) in enumerate(zip(markers, dataframes.iterrows())):
-        ds = dict(df.copy())
+
+def create_velocity_figure(dataframe, color_key, title, color_mapper):
+    
+    markers = [marker for marker in MarkerType if marker not in ['circle_cross', 'circle_x']] * 10
+    fig = figure(title=title)
+
+    for i, (marker, (path, df)) in enumerate(zip(markers, dataframe.iterrows())):
+        ds = dict(df)
         source = ColumnDataSource(ds)
-        fig.scatter('dpt', 'expr', source=source, color={'field': key, 'transform': mapper},
-                        marker=marker, size=10, legend=f'{gene}', muted_alpha=0)
+        fig.scatter('dpt', 'expr', source=source, color={'field': color_key, 'transform': color_mapper},
+                    marker=marker, size=10, legend=f'{path}', muted_alpha=0)
+        fig.xaxis.axis_label = 'dpt'
+        fig.yaxis.axis_label = 'expression'
         if ds.get('x_test') is not None:
             if ds.get('x_mean') is not None:
-                fig.line('x_test', 'x_mean', source=source, muted_alpha=0, legend=gene)
+                fig.line('x_test', 'x_mean', source=source, muted_alpha=0, legend=path)
                 if ds.get('x_cov') is not None:
                     x_mean = ds['x_mean']
                     x_cov = ds['x_cov']
                     band_x = np.append(ds['x_test'][::-1], ds['x_test'])
                     band_y = np.append((x_mean - np.sqrt(np.diag(x_cov)))[::-1], (x_mean + np.sqrt(np.diag(x_cov))))
-                    fig.patch(band_x, band_y, alpha=0.1, line_color='black', fill_color='black', legend=gene, line_dash='dotdash',
-                                                  muted_alpha=0)
+                    fig.patch(band_x, band_y, alpha=0.1, line_color='black', fill_color='black',
+                              legend=path, line_dash='dotdash', muted_alpha=0)
             if ds.get('x_grad') is not None:
                 fig.line('x_test', 'x_grad', source=source, muted_alpha=0)
 
@@ -629,13 +638,12 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
 
     conv_hulls = df[df[key] == df['prediction']].groupby(key).apply(lambda df: df.iloc[ConvexHull(np.vstack([df['x'], df['y']]).T).vertices])
 
-    palette = adata.uns.get(f'{key}_colors', viridis(len(adata.obs[key].unique())))
-    key_col = adata.obs[key].astype('category') if adata.obs[key].dtype.name != 'category' else  adata.obs[key]
-    mapper = CategoricalColorMapper(palette=palette, factors=list(map(str, key_col.cat.categories)))
-
+    mapper = create_mapper(adata, key)
+    categories = adata.obs[key].cat.categories
     fig = figure(tools='pan, reset, wheel_zoom, lasso_select, save')
     legend_dict = defaultdict(list)
-    for k in key_col.cat.categories:
+
+    for k in categories:
         d = df[df[key] == k]
         data_source =  ColumnDataSource(d)
         legend_dict[k].append(fig.scatter('x', 'y', source=data_source, color={'field': key, 'transform': mapper}, size=5, muted_alpha=0))
@@ -666,7 +674,7 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
                     tmp_data[f'{k}_{j}'] = tmp[:, j]
 
         tmp_data = pd.DataFrame(tmp_data)
-        for k in key_col.cat.categories:
+        for k in categories:
             d = tmp_data[tmp_data[key] == k]
             source = ColumnDataSource(d)
 
