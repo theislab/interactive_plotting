@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+    
 from sklearn.gaussian_process.kernels import *
 from sklearn import neighbors
 from scipy.sparse import issparse
@@ -17,7 +17,8 @@ import matplotlib.cm as cm
 import matplotlib
 
 from bokeh.plotting import figure, show
-from bokeh.models import ColumnDataSource, Slider, HoverTool, ColorBar, Patches, Legend, CustomJS
+from bokeh.models import ColumnDataSource, Slider, HoverTool, ColorBar, Patches, Legend, CustomJS, TextInput
+#from bokeh.models.inputs import TextInput
 from bokeh.models.mappers import CategoricalColorMapper
 from bokeh.layouts import layout, column, row
 from bokeh.transform import linear_cmap, factor_mark, factor_cmap
@@ -32,18 +33,20 @@ _inter_hist_js_code="""
     var x = orig.data['values'];
 
     x = x.sort((a, b) => a - b);
-    var n_bins = bins.value;
+    var n_bins = parseInt(bins.value); // can be either string or int
     var bin_size = (x[x.length - 1] - x[0]) / n_bins;
 
     var hist = new Array(n_bins).fill().map((_, i) => { return 0; });
     var l_edges = new Array(n_bins).fill().map((_, i) => { return x[0] + bin_size * i; });
     var r_edges = new Array(n_bins).fill().map((_, i) => { return x[0] + bin_size * (i + 1); });
+    var indices = new Array(n_bins).fill().map((_) => { return []; });
 
     // create the histogram
     for (var i = 0; i < x.length; i++) {
         for (var j = 0; j < r_edges.length; j++) {
             if (x[i] <= r_edges[j]) {
                 hist[j] += 1;
+                indices[j].push(i);
                 break;
             }
         }
@@ -58,6 +61,7 @@ _inter_hist_js_code="""
     source.data['hist'] = hist;
     source.data['l_edges'] = l_edges;
     source.data['r_edges'] = r_edges;
+    source.data['indices'] = indices;
 
     source.change.emit();
 """
@@ -235,6 +239,82 @@ def interactive_histograms(adata, keys=['n_counts', 'n_genes'],
         show(layout(children=grid, sizing_mode='fixed', ncols=2))
 
 
+def hist_thres(adata, key='n_counts', groups=[], bins='auto', basis='umap', components=[1, 2]):
+    if not isinstance(components, np.ndarray):
+        components = np.asarray(components)
+
+    fig = figure()
+    hist, edges = np.histogram(adata.obs[key], density=True, bins=bins)
+    
+    inputs = []
+    source = ColumnDataSource(data=dict(hist=hist, l_edges=edges[:-1], r_edges=edges[1:], color=['#000000'] * len(hist), indices=[[]] * len(hist)))
+    df = pd.DataFrame(adata.obsm[f'X_{basis}'][:, components - 1], columns=['x', 'y'])
+    df['values'] = list(adata.obs[key])
+    df['color'] = '#000000'
+
+    orig = ColumnDataSource(df)
+    p = fig.quad(source=source, top='hist', bottom=0,
+                 left='l_edges', right='r_edges', color='color',
+                 line_color="#555555")
+    fig2 = figure()
+
+    um = fig2.scatter('x', 'y', source=orig, color='color', size=20)
+
+    source1 = ColumnDataSource(dict(xs=[40000, 40000], ys=[0, 0.00001]))
+    fig.line('xs', 'ys', source=source1, line_width=5, color='red')
+
+    source2 = ColumnDataSource(dict(xs=[80000, 80000], ys=[0, 0.00001]))
+    fig.line('xs', 'ys', source=source2, line_width=5, color='red')
+
+    # create callback and slider
+    for group in groups:
+        input = TextInput(name='test', value='40000', title=f'{group} min')
+        input2 = TextInput(name='test', value='80000', title=f'{group} max')
+        #callback = CustomJS(args=dict(source=source, orig=orig), code=_inter_hist_js_code)
+        i1back = CustomJS(args={'source': source1,'bins': input}, code=f'''
+            var x = parseInt(bins.value);
+            source.data['xs'] = [x, x];
+            source.change.emit();
+        ''')
+        i2back = CustomJS(args={'source': source, 'input_min': input, 'input_max': input2, 'orig': orig}, code='''
+            var min = parseInt(input_min.value);
+            var max = parseInt(input_max.value);
+            console.log(source.data['indices']);
+            for (var i = 0; i < source.data['hist'].length; i++) {
+                var mid = (source.data['r_edges'][i] - source.data['l_edges'][i]) / 2;
+                if (source.data['l_edges'][i] + mid >= min && source.data['r_edges'][i] - mid <= max) {
+                    source.data['color'][i] = '#FF0000';
+                    for (var j = 0; j < source.data['indices'][i].length; j++) {
+                        orig.data['color'][source.data['indices'][i][j]] = '#FF0000';
+                    }
+                } else {
+                    source.data['color'][i] = '#000000';
+                    for (var j = 0; j < source.data['indices'][i].length; j++) {
+                        orig.data['color'][source.data['indices'][i][j]] = '#000000';
+                    }
+                }
+            }
+            orig.change.emit();
+            source.change.emit();
+        ''')
+        input.js_on_change('value', *[i1back, i2back])
+
+        i3back = CustomJS(args={'source': source2,'bins': input2}, code=f'''
+            var x = parseInt(bins.value);
+            source.data['xs'] = [x, x];
+            source.change.emit();
+        ''')
+        input2.js_on_change('value', *[i3back, i2back])
+
+        slider = Slider(start=0, end=100, value=len(hist), title='Bins')
+        c2back = CustomJS(args={'source': source, 'orig': orig, 'bins': slider}, code=_inter_hist_js_code)
+        slider.js_on_change('value', *[c2back, i2back])
+        inputs += [input, input2]
+
+
+    show(column(row(fig, column(inputs + [slider])), fig2))
+
+
 def smooth_expression(x, y, n_points=100, mode='gp', kernel_params=dict(), kernel_default_params=dict(),
                      kernel_expr=None, suppress=False, **opt_params):
 
@@ -389,14 +469,10 @@ def pred_exp(X_test, y_test):
     return y_pred
 
 
-def plot_velocity(adata,genes=None,paths=[],
-              n_velocity_genes=5,
-              smooth=True,
-              length_scale=0.2,
-              mode='gp',
+def plot_velocity(adata, genes=None, paths=[], n_velocity_genes=5,
+              exp_key='X', mode='gp', smooth=True, length_scale=0.2,
               differentiate=True,
               return_values=False,
-              exp_key='X',
               velo_key_ss='velocity',
               velo_key_dyn='velocity_dynamical',
               scatter_kwgs=None,
@@ -736,7 +812,7 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], markers=None,
 
     ds = ColumnDataSource(df)
     start_ix = str(adata.uns.get('iroot', 0))
-    palette =cm.RdYlBu if palette is None else palette
+    palette = cm.RdYlBu if palette is None else palette
     mapper = linear_cmap(field_name='color', palette=cmap_to_colors(palette(range(palette.N), 1., bytes=True)),
                          low=df[start_ix].min(), high=df[start_ix].max())
 
