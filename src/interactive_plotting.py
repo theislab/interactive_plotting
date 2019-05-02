@@ -20,7 +20,7 @@ from bokeh.plotting import figure, show
 from bokeh.models import ColumnDataSource, Slider, HoverTool, ColorBar, Patches, Legend, CustomJS, TextInput
 #from bokeh.models.inputs import TextInput
 from bokeh.models.mappers import CategoricalColorMapper
-from bokeh.layouts import layout, column, row
+from bokeh.layouts import layout, column, row, GridSpec
 from bokeh.transform import linear_cmap, factor_mark, factor_cmap
 from bokeh.core.enums import MarkerType
 from bokeh.palettes import Set1, Set2, Set3, viridis
@@ -239,80 +239,98 @@ def interactive_histograms(adata, keys=['n_counts', 'n_genes'],
         show(layout(children=grid, sizing_mode='fixed', ncols=2))
 
 
-def hist_thres(adata, key='n_counts', groups=[], bins='auto', basis='umap', components=[1, 2]):
+def hist_thres(adata, key='n_counts', categories=[], bins='auto', basis='umap', components=[1, 2],
+               palette=None):
     if not isinstance(components, np.ndarray):
         components = np.asarray(components)
 
-    fig = figure()
+    hist_fig = figure()
+    hist_fig.xaxis.axis_label = key
+    hist_fig.yaxis.axis_label = 'normalized frequency'
     hist, edges = np.histogram(adata.obs[key], density=True, bins=bins)
     
-    inputs = []
-    source = ColumnDataSource(data=dict(hist=hist, l_edges=edges[:-1], r_edges=edges[1:], color=['#000000'] * len(hist), indices=[[]] * len(hist)))
+    source = ColumnDataSource(data=dict(hist=hist, l_edges=edges[:-1], r_edges=edges[1:],
+                              category=['default'] * len(hist), indices=[[]] * len(hist)))
     df = pd.DataFrame(adata.obsm[f'X_{basis}'][:, components - 1], columns=['x', 'y'])
     df['values'] = list(adata.obs[key])
-    df['color'] = '#000000'
+    df['category'] = 'default'
+    df['cat_stack'] = [['default']] * len(df)
 
     orig = ColumnDataSource(df)
-    p = fig.quad(source=source, top='hist', bottom=0,
-                 left='l_edges', right='r_edges', color='color',
-                 line_color="#555555")
-    fig2 = figure()
+    color = dict(field='category', transform=CategoricalColorMapper(palette=palette, factors=list(categories.keys())))
+    hist_fig.quad(source=source, top='hist', bottom=0,
+                  left='l_edges', right='r_edges', color=color,
+                  line_color="#555555", legend='category')
 
-    um = fig2.scatter('x', 'y', source=orig, color='color', size=20)
-
-    source1 = ColumnDataSource(dict(xs=[40000, 40000], ys=[0, 0.00001]))
-    fig.line('xs', 'ys', source=source1, line_width=5, color='red')
-
-    source2 = ColumnDataSource(dict(xs=[80000, 80000], ys=[0, 0.00001]))
-    fig.line('xs', 'ys', source=source2, line_width=5, color='red')
-
+    emb_fig= figure(title=basis)
+    emb_fig.xaxis.axis_label = f'{basis}_{components[0]}'
+    emb_fig.yaxis.axis_label = f'{basis}_{components[1]}'
+    emb_fig.scatter('x', 'y', source=orig, size=20, color=color, legend='category')
     # create callback and slider
-    for group in groups:
-        input = TextInput(name='test', value='40000', title=f'{group} min')
-        input2 = TextInput(name='test', value='80000', title=f'{group} max')
-        #callback = CustomJS(args=dict(source=source, orig=orig), code=_inter_hist_js_code)
-        i1back = CustomJS(args={'source': source1,'bins': input}, code=f'''
-            var x = parseInt(bins.value);
-            source.data['xs'] = [x, x];
-            source.change.emit();
-        ''')
-        i2back = CustomJS(args={'source': source, 'input_min': input, 'input_max': input2, 'orig': orig}, code='''
-            var min = parseInt(input_min.value);
-            var max = parseInt(input_max.value);
-            console.log(source.data['indices']);
-            for (var i = 0; i < source.data['hist'].length; i++) {
+    line_pos_code = '''
+        var x = parseInt(inp.value);
+        source.data['xs'] = [x, x];
+        source.change.emit();
+    '''
+    inputs, category_cbs = [], []
+    for col, cat_item in zip(palette, categories.items()):
+        cat, (start, end) = cat_item
+        min_ds = ColumnDataSource(dict(xs=[start] * 2, ys=[0, 0.00001]))
+        max_ds = ColumnDataSource(dict(xs=[end] * 2, ys=[0, 0.00001]))
+
+        #hist_fig.line('xs', 'ys', source=min_ds, line_width=5, color=col)
+        #hist_fig.line('xs', 'ys', source=max_ds, line_width=5, color=col)
+
+        inp_min = TextInput(name='test', value=f'{start}', title=f'{cat}/min')
+        inp_max = TextInput(name='test', value=f'{end}', title=f'{cat}/max')
+        min_pos_cb = CustomJS(args={'source': min_ds, 'inp': inp_min}, code=line_pos_code)
+        max_pos_cb = CustomJS(args={'source': max_ds, 'inp': inp_max}, code=line_pos_code)
+        category_cb = CustomJS(args={'source': source, 'orig': orig, 'inp_min': inp_min, 'inp_max': inp_max}, code=f'''
+            var min = parseInt(inp_min.value);
+            var max = parseInt(inp_max.value);
+            for (var i = 0; i < source.data['hist'].length; i++) {{
                 var mid = (source.data['r_edges'][i] - source.data['l_edges'][i]) / 2;
-                if (source.data['l_edges'][i] + mid >= min && source.data['r_edges'][i] - mid <= max) {
-                    source.data['color'][i] = '#FF0000';
-                    for (var j = 0; j < source.data['indices'][i].length; j++) {
-                        orig.data['color'][source.data['indices'][i][j]] = '#FF0000';
-                    }
-                } else {
-                    source.data['color'][i] = '#000000';
-                    for (var j = 0; j < source.data['indices'][i].length; j++) {
-                        orig.data['color'][source.data['indices'][i][j]] = '#000000';
-                    }
-                }
-            }
+                if (source.data['l_edges'][i] + mid >= min && source.data['r_edges'][i] - mid <= max) {{
+                    source.data['category'][i] = '{cat}';
+                    for (var j = 0; j < source.data['indices'][i].length; j++) {{
+                        var ix = source.data['indices'][i][j];
+                        var cat_stack = orig.data['cat_stack'][ix];
+                        console.log('{cat}', cat_stack);
+                        if ('{cat}' != cat_stack[cat_stack.length - 1]) {{
+                            cat_stack.push('{cat}');
+                        }}
+                        orig.data['category'][ix] = '{cat}';
+                    }}
+                }} else {{
+                    var last_cat = 'default';
+                    for (var j = 0; j < source.data['indices'][i].length; j++) {{
+                        var ix = source.data['indices'][i][j];
+                        var cat_stack = orig.data['cat_stack'][ix];
+                        last_cat = cat_stack[cat_stack.length - 1];
+                        if (cat_stack.length > 1 && last_cat == '{cat}') {{
+                            last_cat = cat_stack.pop();
+                        }}
+                        orig.data['category'][ix] = last_cat;
+                    }}
+                    source.data['category'][i] = last_cat;
+                    console.log(cat_stack);
+                }}
+            }}
             orig.change.emit();
             source.change.emit();
         ''')
-        input.js_on_change('value', *[i1back, i2back])
+        category_cbs.append(category_cb)
+        inp_min.js_on_change('value', category_cb, min_pos_cb)
+        inp_max.js_on_change('value', category_cb, max_pos_cb)
 
-        i3back = CustomJS(args={'source': source2,'bins': input2}, code=f'''
-            var x = parseInt(bins.value);
-            source.data['xs'] = [x, x];
-            source.change.emit();
-        ''')
-        input2.js_on_change('value', *[i3back, i2back])
+        inputs.extend([inp_min, inp_max])
+        #inputs.append([inp_min, inp_max])
 
-        slider = Slider(start=0, end=100, value=len(hist), title='Bins')
-        c2back = CustomJS(args={'source': source, 'orig': orig, 'bins': slider}, code=_inter_hist_js_code)
-        slider.js_on_change('value', *[c2back, i2back])
-        inputs += [input, input2]
+    slider = Slider(start=1, end=100, value=len(hist), title='Bins')
+    interactive_hist_cb= CustomJS(args={'source': source, 'orig': orig, 'bins': slider}, code=_inter_hist_js_code)
+    slider.js_on_change('value', interactive_hist_cb, *category_cbs)
 
-
-    show(column(row(fig, column(inputs + [slider])), fig2))
+    show(column(row(hist_fig, column(slider, *inputs)), emb_fig))
 
 
 def smooth_expression(x, y, n_points=100, mode='gp', kernel_params=dict(), kernel_default_params=dict(),
