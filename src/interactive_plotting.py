@@ -17,14 +17,13 @@ import matplotlib.cm as cm
 import matplotlib
 
 from bokeh.plotting import figure, show
-from bokeh.models import ColumnDataSource, Slider, HoverTool, ColorBar, Patches, Legend, CustomJS, TextInput
-#from bokeh.models.inputs import TextInput
+from bokeh.models import ColumnDataSource, Slider, HoverTool, ColorBar, \
+        Patches, Legend, CustomJS, TextInput, LabelSet
 from bokeh.models.mappers import CategoricalColorMapper
 from bokeh.layouts import layout, column, row, GridSpec
 from bokeh.transform import linear_cmap, factor_mark, factor_cmap
 from bokeh.core.enums import MarkerType
 from bokeh.palettes import Set1, Set2, Set3, viridis
-from bokeh.models.widgets import CheckboxGroup
 from bokeh.models.widgets.buttons import Button
 
 
@@ -127,7 +126,7 @@ def interactive_histograms(adata, keys=['n_counts', 'n_genes'],
 
     def _create_adata_groups():
         if groups is None:
-            return [('all',)], [adata]
+            return [adata], [('all',)]
 
         combs = list(product(*[set(adata.obs[g]) for g in groups]))
         adatas= [adata[reduce(lambda l, r: l & r,
@@ -138,30 +137,21 @@ def interactive_histograms(adata, keys=['n_counts', 'n_genes'],
             combs += [('all',)]
             adatas += [adata]
 
-        return combs, adatas
+        return adatas, combs
 
     # group_v_combs contains the value combinations
     # used for grupping
-    group_v_combs, adatas = _create_adata_groups()
-    n_plots = len(group_v_combs)
-    checkbox_group = CheckboxGroup(active=list(range(n_plots)), width=200)
+    ad_gs = _create_adata_groups()
     
     for key in keys:
         # create histogram
-        cols, legends, callbacks = [], [], []
-        plot_map = dict()
+        cols, callbacks = [], []
         fig = figure(*args, tools=tools, **kwargs)
         slider = Slider(start=min_bins, end=max_bins, value=0, step=1,
                         title='Bins')
 
-        plot_ids = []
-        for j, (ad, group_vs) in enumerate(zip(adatas, group_v_combs)):
-
-            if ad.n_obs == 0:
-                continue
-            
-            plot_ids.append(j)
-            color = palette[len(plot_ids) - 1]
+        plots = []
+        for j, (ad, group_vs) in enumerate(filter(lambda ad_g: ad_g[0].n_obs > 0, zip(*ad_gs))):
 
             if key in ad.obs.keys():
                 orig = ad.obs[key]
@@ -182,11 +172,11 @@ def interactive_histograms(adata, keys=['n_counts', 'n_genes'],
 
             legend = ', '.join(': '.join(map(str, gv)) for gv in zip(groups, group_vs)) \
                     if groups is not None else 'all'
-            legends.append(legend)
             # create figure
             p = fig.quad(source=source, top='hist', bottom=0,
                          left='l_edges', right='r_edges',
-                         fill_color=color, legend=legend,
+                         fill_color=palette[j], legend=legend,
+                         muted_alpha=0,
                          line_color="#555555", fill_alpha=fill_alpha)
 
             # create callback and slider
@@ -196,31 +186,20 @@ def interactive_histograms(adata, keys=['n_counts', 'n_genes'],
 
             # add the current plot so that we can set it
             # visible/invisible in JS code
-            plot_map[f'p_{j}'] = p
+            plots.append(p)
 
         # slider now updates all values
         slider.js_on_change('value', *callbacks)
-        plot_map['cb'] = checkbox_group
 
-        button = Button(label='Toggle All', button_type='primary')
-        code_t='\n'.join(f'p_{p_id}.visible = false;' for i, p_id in enumerate(plot_ids))
-        code_f ='\n'.join(f'p_{p_id}.visible = true;' for i, p_id in enumerate(plot_ids))
+        button = Button(label='Toggle', button_type='primary')
         button.callback = CustomJS(
-            args=plot_map,
-            code=f'''if (cb.active.length == {len(plot_map) - 1}) {{
-                cb.active = Array();
-                {code_t};
-            }} else {{
-                cb.active = Array.from(Array({len(plot_map) - 1}).keys());
-                {code_f};
-            }}'''
+            args={'plots': plots},
+            code='''
+                for (var i = 0; i < plots.length; i++) {
+                    plots[i].muted = !plots[i].muted;
+                }
+            '''
         )
-
-        checkbox_group.callback = CustomJS(
-            args=plot_map,
-            code='\n'.join(f'p_{p_id}.visible = cb.active.includes({i});' for i, p_id in enumerate(plot_ids))
-        )
-        checkbox_group.labels = legends
 
         fig.legend.location = legend_loc
         fig.xaxis.axis_label = key
@@ -228,32 +207,70 @@ def interactive_histograms(adata, keys=['n_counts', 'n_genes'],
         fig.plot_width = kwargs.get('plot_width', 400)
         fig.plot_height = kwargs.get('plot_height', 400)
 
-        cols.append(column(slider, button, row(fig, checkbox_group)))
+        fig.legend.click_policy = 'mute'
+        cols.append(column(slider, button, fig))
 
 
     # transform list of pairs of figures and sliders into list of lists, where
     # each sublist has length <= 2
     # note that bokeh does not like np.arrays
-        grid = list(map(list, np.array_split(cols, np.ceil(len(cols) / 2))))
+    grid = list(map(list, np.array_split(cols, np.ceil(len(cols) / 2))))
 
-        show(layout(children=grid, sizing_mode='fixed', ncols=2))
+    show(layout(children=grid, sizing_mode='fixed', ncols=2))
 
 
-def hist_thres(adata, key='n_counts', categories=[], bins='auto', basis='umap', components=[1, 2],
-               palette=None):
-    if not isinstance(components, np.ndarray):
-        components = np.asarray(components)
+def hist_thresh(adata, key, categories=dict(), bases=['umap'], componentss=[[1, 2]],
+               bins='auto', palette=Set3[12]):
+    """Histogram with the option to subset categories based on the binned values.
 
-    hist_fig = figure()
+    Params
+    --------
+    adata: AnnData
+        annotated data object
+    key: str
+        key in adata.obs where the distibution is stored
+    categories: dict, optional (default: `{}`)
+        dictionary with keys corresponding to group names, and values as starting boundaries [start_min, start_max]
+    bases: list, optional (default: `['umap']`)
+        bases in `adata.obs` to visualize
+    components: list(list), optional (default: `[[1, 2]]`)
+        components to use for each basis, if len(components) == 1, use the same for each
+    bins: int, str, optional (default: `auto`)
+        number of bins used for initial plotting or str from numpy.histogram
+    palette: list(str), optional (default: `Set3[12]`)
+         palette to use when coloring categories
+
+    Returns
+    --------
+    None
+    """
+    #TODO palette
+
+    if not isinstance(componentss, np.ndarray):
+        componentss = np.asarray(componentss)
+
+    if not isinstance(bases, list):
+        bases = [bases]
+
+    if componentss.ndim != 2:
+        componentss = np.expand_dims(componentss, 0)
+
+    # this does not speed these kinds of glyphs
+    hist_fig = figure()  # output_backend='webgl')
     hist_fig.xaxis.axis_label = key
     hist_fig.yaxis.axis_label = 'normalized frequency'
     hist, edges = np.histogram(adata.obs[key], density=True, bins=bins)
     
     source = ColumnDataSource(data=dict(hist=hist, l_edges=edges[:-1], r_edges=edges[1:],
                               category=['default'] * len(hist), indices=[[]] * len(hist)))
-    df = pd.DataFrame(adata.obsm[f'X_{basis}'][:, components - 1], columns=['x', 'y'])
+
+    # df = pd.DataFrame(adata.obsm[f'X_umap'][:, componentss[0] - 1], columns=['x', 'y'])
+    # TODO: remove i
+    df = pd.concat([pd.DataFrame(adata.obsm[f'X_{basis}'][:, components - (basis != 'diffmap')], columns=[f'x_{basis}', f'y_{basis}'])
+                    for basis, components in zip(bases, componentss)], axis=1)
     df['values'] = list(adata.obs[key])
     df['category'] = 'default'
+    df['visible_category'] = 'default'
     df['cat_stack'] = [['default']] * len(df)
 
     orig = ColumnDataSource(df)
@@ -262,79 +279,133 @@ def hist_thres(adata, key='n_counts', categories=[], bins='auto', basis='umap', 
                   left='l_edges', right='r_edges', color=color,
                   line_color="#555555", legend='category')
 
-    emb_fig= figure(title=basis)
-    emb_fig.xaxis.axis_label = f'{basis}_{components[0]}'
-    emb_fig.yaxis.axis_label = f'{basis}_{components[1]}'
-    emb_fig.scatter('x', 'y', source=orig, size=20, color=color, legend='category')
+    emb_figs = []
+    for basis, components in zip(bases, componentss):
+        # this does not speed these kinds of glyphs
+        fig = figure(title=basis)  # , output_backend='webgl')
+        fig.xaxis.axis_label = f'{basis}_{components[0]}'
+        fig.yaxis.axis_label = f'{basis}_{components[1]}'
+        fig.scatter(f'x_{basis}', f'y_{basis}', source=orig, size=10, color=color, legend='category')
+        emb_figs.append(fig)
+
     # create callback and slider
-    line_pos_code = '''
-        var x = parseInt(inp.value);
-        source.data['xs'] = [x, x];
-        source.change.emit();
-    '''
+
     inputs, category_cbs = [], []
+    code_start, code_mid, code_thresh = [], [], []
+    args = {'source': source, 'orig': orig}
+
     for col, cat_item in zip(palette, categories.items()):
         cat, (start, end) = cat_item
-        min_ds = ColumnDataSource(dict(xs=[start] * 2, ys=[0, 0.00001]))
-        max_ds = ColumnDataSource(dict(xs=[end] * 2, ys=[0, 0.00001]))
-
-        #hist_fig.line('xs', 'ys', source=min_ds, line_width=5, color=col)
-        #hist_fig.line('xs', 'ys', source=max_ds, line_width=5, color=col)
-
         inp_min = TextInput(name='test', value=f'{start}', title=f'{cat}/min')
         inp_max = TextInput(name='test', value=f'{end}', title=f'{cat}/max')
-        min_pos_cb = CustomJS(args={'source': min_ds, 'inp': inp_min}, code=line_pos_code)
-        max_pos_cb = CustomJS(args={'source': max_ds, 'inp': inp_max}, code=line_pos_code)
-        category_cb = CustomJS(args={'source': source, 'orig': orig, 'inp_min': inp_min, 'inp_max': inp_max}, code=f'''
-            var min = parseInt(inp_min.value);
-            var max = parseInt(inp_max.value);
-            for (var i = 0; i < source.data['hist'].length; i++) {{
-                var mid = (source.data['r_edges'][i] - source.data['l_edges'][i]) / 2;
-                if (source.data['l_edges'][i] + mid >= min && source.data['r_edges'][i] - mid <= max) {{
-                    source.data['category'][i] = '{cat}';
-                    for (var j = 0; j < source.data['indices'][i].length; j++) {{
-                        var ix = source.data['indices'][i][j];
-                        var cat_stack = orig.data['cat_stack'][ix];
-                        console.log('{cat}', cat_stack);
-                        if ('{cat}' != cat_stack[cat_stack.length - 1]) {{
-                            cat_stack.push('{cat}');
-                        }}
-                        orig.data['category'][ix] = '{cat}';
-                    }}
-                }} else {{
-                    var last_cat = 'default';
-                    for (var j = 0; j < source.data['indices'][i].length; j++) {{
-                        var ix = source.data['indices'][i][j];
-                        var cat_stack = orig.data['cat_stack'][ix];
-                        last_cat = cat_stack[cat_stack.length - 1];
-                        if (cat_stack.length > 1 && last_cat == '{cat}') {{
-                            last_cat = cat_stack.pop();
-                        }}
-                        orig.data['category'][ix] = last_cat;
-                    }}
-                    source.data['category'][i] = last_cat;
-                    console.log(cat_stack);
+
+        code_start.append(f'''
+            var min_{cat} = parseInt(inp_min_{cat}.value);
+            var max_{cat} = parseInt(inp_max_{cat}.value);
+        ''')
+        code_mid.append(f'''
+            var mid_{cat} = (source.data['r_edges'][i] - source.data['l_edges'][i]) / 2;
+        ''')
+        code_thresh.append(f'''
+            if (source.data['l_edges'][i] + mid_{cat} >= min_{cat} && source.data['r_edges'][i] - mid_{cat} <= max_{cat}) {{
+                source.data['category'][i] = '{cat}';
+                for (var j = 0; j < source.data['indices'][i].length; j++) {{
+                    var ix = source.data['indices'][i][j];
+                    orig.data['category'][ix] = '{cat}';
                 }}
             }}
-            orig.change.emit();
-            source.change.emit();
         ''')
-        category_cbs.append(category_cb)
-        inp_min.js_on_change('value', category_cb, min_pos_cb)
-        inp_max.js_on_change('value', category_cb, max_pos_cb)
+        args[f'inp_min_{cat}'] = inp_min
+        args[f'inp_max_{cat}'] = inp_max
+        min_ds = ColumnDataSource(dict(xs=[start] * 2))
+        max_ds = ColumnDataSource(dict(xs=[end] * 2))
+
+        #min_pos_cb = CustomJS(args={'source': min_ds, 'inp': inp_min}, code=line_pos_code)
+        #max_pos_cb = CustomJS(args={'source': max_ds, 'inp': inp_max}, code=line_pos_code)
+        #category_cbs.append(category_cb)
+        #inp_min.js_on_change('value', category_cb)
+        #inp_max.js_on_change('value', category_cb)
 
         inputs.extend([inp_min, inp_max])
-        #inputs.append([inp_min, inp_max])
+
+    code_thresh.append('''
+        {
+            source.data['category'][i] = 'default';
+            for (var j = 0; j < source.data['indices'][i].length; j++) {
+                var ix = source.data['indices'][i][j];
+                orig.data['category'][ix] = 'default';
+            }
+        }
+    ''')
+
+    callback = CustomJS(args=args, code=f'''
+        {';'.join(code_start)}
+        for (var i = 0; i < source.data['hist'].length; i++) {{
+            {';'.join(code_mid)}
+            {' else '.join(code_thresh)}
+        }}
+        orig.change.emit();
+        source.change.emit();
+    ''')
+    for input in inputs:
+        input.js_on_change('value', callback)
 
     slider = Slider(start=1, end=100, value=len(hist), title='Bins')
-    interactive_hist_cb= CustomJS(args={'source': source, 'orig': orig, 'bins': slider}, code=_inter_hist_js_code)
-    slider.js_on_change('value', interactive_hist_cb, *category_cbs)
+    interactive_hist_cb = CustomJS(args={'source': source, 'orig': orig, 'bins': slider}, code=_inter_hist_js_code)
+    slider.js_on_change('value', interactive_hist_cb, callback)
 
-    show(column(row(hist_fig, column(slider, *inputs)), emb_fig))
+    show(column(row(hist_fig, column(slider, *inputs)), *emb_figs))
 
 
 def smooth_expression(x, y, n_points=100, mode='gp', kernel_params=dict(), kernel_default_params=dict(),
-                     kernel_expr=None, suppress=False, **opt_params):
+                     kernel_expr=None, default=False, **opt_params):
+    kernels = dict(const=ConstantKernel,
+                   white=WhiteKernel,
+                   rbf=RBF,
+                   mat=Matern,
+                   rq=RationalQuadratic,
+                   esn=ExpSineSquared,
+                   dp=DotProduct,
+                   pw=PairwiseKernel)
+
+    x_test = np.linspace(0, 1, n_points)[:, None]
+    """Smooth out the expression of given values.
+
+    Params
+    --------
+    x: list(num)
+        list of features
+    y: list(num)
+        list of targets
+    n_points: int, optional (default: `100`)
+        number of points to extrapolate
+    mode: str, optional (default: `'gp'`)
+        which regressor to use, available (`gp`: Gaussian process, `krr`: Kernel ridge regression)
+    kernel_params: dict, optional (default: `dict()`)
+        dictionary of kernels with their parameters, keys correspond to variable names
+        which can be later combined using  `kernel_expr`. Supported kernels: `ConstantKernel`, `WhiteKernel`,
+        `RBF`, `Mattern`, `RationalQuadratic`, `ExpSineSquared`, `DotProduct`, `PairWiseKernel`.
+    kernel_expr: str, default (`None`)
+        expression to combine kernel variables specified in `kernel_params`. Supported operators are `+`, `*`, `**`;
+        example: kernel_expr=`'(a + b) ** 2'`, kernel_params=`{'a': ConstantKernel(1), 'b': DotProduct(2)}`
+    kernel_default_params: dict, optional (default: `dict()`)
+        default parameters for a kernel, if not found in `kernel_params`
+    default: bool, optional (default: `False`)
+        whether to use default kernel (RBF), if none specified and/or to use default
+        parameters for kernel variables in` kernel_expr`, not found in `kernel_params`
+        if not, throws an Exception
+    **opt_params: dict, optional (default: `dict()`)
+        keyword arguments for optimizer
+
+    Returns
+    --------
+    x_test: np.array
+        points for which we predict the values
+    x_mean: np.array
+        mean of the response
+    cov: np.array (`None` for mode: `'krr'`)
+        covariance matrix of the response
+    """
 
     from sklearn.kernel_ridge import KernelRidge
     from sklearn.gaussian_process import GaussianProcessRegressor
@@ -346,8 +417,8 @@ def smooth_expression(x, y, n_points=100, mode='gp', kernel_params=dict(), kerne
             return node.n
 
         if isinstance(node, ast.Name):
-            if not suppress and node.id not in kernel_params:
-                raise ValueError(f'Error while parsing `{kernel_expr}`: `{node.id}` is not a valid key in kernel_params. To use RBF kernel with default parameters, specify suppress=True.')
+            if not default and node.id not in kernel_params:
+                raise ValueError(f'Error while parsing `{kernel_expr}`: `{node.id}` is not a valid key in kernel_params. To use RBF kernel with default parameters, specify default=True.')
             params = kernel_params.get(node.id, kernel_default_params)
             kernel_type = params.pop('type', 'rbf')
             return kernels[kernel_type](**params)
@@ -409,24 +480,21 @@ def smooth_expression(x, y, n_points=100, mode='gp', kernel_params=dict(), kerne
 
 def compute_dist(x_obs, x_theo, weights=None):
     """
-    Utility funciton to compute distance between point cloud and curve
-    :param x_obs: observed data
-    :param x_theo: theoretical data/curve
-    :return: distance measure
+    Utility function to compute distance a between point cloud and curve
+
+    Params
+    --------
+    x_obs: np.array
+        observed data
+    x_theo: np.array
+        theoretical data/curve
+
+    Returns 
+    --------
+    score:
+        a distance measure
     """
 
-    """
-    score = 0
-    for point in x_obs:
-        point_extended = np.ones((x_theo.shape[0], 1)) @ point[None, :]
-        dist = np.linalg.norm(point_extended-x_theo, axis=1)
-        ix = np.argmin(dist)
-        min_dist = dist[ix]
-        if weights is not None:
-            min_dist *= weights[ix]*min_dist
-
-        score += min_dist
-    """
     from fastdtw import fastdtw
     score, path = fastdtw(x_obs, x_theo, dist=2)
 
@@ -434,15 +502,20 @@ def compute_dist(x_obs, x_theo, weights=None):
 
 
 def shift_scale(x_obs, x_theo, fit_intercept=False):
-    """Utility funciton to shift and scale the integrated velocities
+    """Utility function to shift and scale the integrated velocities
 
-    :param exp_pred: np.array
-        Integrated velocities, predictor for gene_expression
-    :param gene_exp: np.array
-        Original gene expression values
-    :param exp_mean: np.array
-        Smoothed gene expression
-    :return: exp_pred
+    Params:
+    --------
+    x_obs: np.array
+        observed data
+    x_theo: np.array
+        theoretical data/curve
+    fit_intercept: bool, optional (default: `False`)
+        whether to fit intercept for the linear regression
+
+    Returns
+    --------
+    exp_pred:
         Shifted and scaled integrated velocities
     """
 
@@ -456,12 +529,12 @@ def shift_scale(x_obs, x_theo, fit_intercept=False):
     return reg.coef_, reg.intercept_
 
 
-def pred_exp(X_test, y_test):
+def pred_exp(x_test, y_test):
     """Predict gene expression based on velocities
 
-    Parameters
+    Params
     --------
-    X_test: np.array
+    x_test: np.array
         grid of points in feature space for prediction
     y_test: np.array
         smoothed velocity values
@@ -470,7 +543,6 @@ def pred_exp(X_test, y_test):
     --------
     y_pred: np.array
         predicted values from velocities
-
     """
 
     # integrate the velocity to get gene expression
@@ -502,7 +574,7 @@ def plot_velocity(adata, genes=None, paths=[], n_velocity_genes=5,
 
     Params
     --------
-    adata: AnnData object
+    adata: AnnData
         Annotated data matrix
     genes: list or None, optional (default: `None`)
         List of genes to show
@@ -568,7 +640,7 @@ def plot_velocity(adata, genes=None, paths=[], n_velocity_genes=5,
             genes = list(np.array(genes)[genes_indicator])
 
 
-    mapper = create_mapper(adata, color_key)
+    mapper = _create_mapper(adata, color_key)
 
     figs = []
     for gene in genes:
@@ -642,7 +714,7 @@ def plot_velocity(adata, genes=None, paths=[], n_velocity_genes=5,
         dataframe = pd.DataFrame(data, index=list(map(lambda path: ', '.join(path), paths)))
 
         if plotting:
-            figs.append(create_velocity_figure(dataframe, color_key, title=gene, color_mapper=mapper))
+            figs.append(_create_velocity_figure(dataframe, color_key, title=gene, color_mapper=mapper))
 
     show(column(*figs))
 
@@ -650,7 +722,23 @@ def plot_velocity(adata, genes=None, paths=[], n_velocity_genes=5,
         return data
 
 
-def create_mapper(adata, key):
+def _create_mapper(adata, key):
+    """
+    Helper function to create CategoricalColorMapper from annotated data
+
+    Params
+    --------
+        adata: AnnData
+            annotated data object
+        key: str
+            key in `adata.obs`, for which we want the colors; if no colors for given
+            column are found in `adata.uns[key_colors]`, use Viridis palette
+
+    Returns
+    --------
+        mapper: bokeh.models.mappers.CategoricalColorMapper
+            mapper which maps valuems from `adata.obs[key]` to colors
+    """
     # TODO:
     # plate colors return float
     palette = adata.uns.get(f'{key}_colors', viridis(len(adata.obs[key].unique())))
@@ -658,9 +746,29 @@ def create_mapper(adata, key):
     return CategoricalColorMapper(palette=palette, factors=list(map(str, key_col.cat.categories)))
 
 
-def create_velocity_figure(dataframe, color_key, title, color_mapper):
+def _create_velocity_figure(dataframe, color_key, title, color_mapper):
+    """
+        Helper function which create a figure with smoothed velocities, including
+        confidence intervals, if they exist.
+
+        Params:
+        --------
+        dataframe: pandas.DataFrame
+            dataframe containing the velocity data
+        color_key: str
+            column in `dataframe` that is mapped to colors
+        color_mapper: bokeh.models.mappers.CategoricalColorMapper
+            transformation which assings each value from dataframe[color_key] to color
+        title: str
+            title of the figure
+        Returns:
+        --------
+        fig: bokeh.plotting.figure
+            figure containing the plot
+    """
     
-    markers = [marker for marker in MarkerType if marker not in ['circle_cross', 'circle_x']] * 10
+    # these markers are nearly indistinguishble
+    markers = [marker for marker in MarkerType if marker not in ['circle_cross', 'circle_x']]
     fig = figure(title=title)
 
     for i, (marker, (path, df)) in enumerate(zip(markers, dataframe.iterrows())):
@@ -677,6 +785,7 @@ def create_velocity_figure(dataframe, color_key, title, color_mapper):
                     x_mean = ds['x_mean']
                     x_cov = ds['x_cov']
                     band_x = np.append(ds['x_test'][::-1], ds['x_test'])
+                    # black magic, known only to wizards
                     band_y = np.append((x_mean - np.sqrt(np.diag(x_cov)))[::-1], (x_mean + np.sqrt(np.diag(x_cov))))
                     fig.patch(band_x, band_y, alpha=0.1, line_color='black', fill_color='black',
                               legend=path, line_dash='dotdash', muted_alpha=0)
@@ -691,8 +800,40 @@ def create_velocity_figure(dataframe, color_key, title, color_mapper):
 
 def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
                  de_values='names, scores, pvals_adj, logfoldchanges',
-                 cell_values=[], n_neighbors=5,
+                 cell_keys='', n_neighbors=5,
                  fill_alpha=0.1, show_hull=True):
+    """
+    Highlight differential expression.
+
+    Params
+    --------
+    adata: AnnData
+        annotated data object
+    basis: str, optional (default: `'umap'`)
+        basis used in visualization
+    components: list(int), optional (default: `[1, 2]`)
+        components of the basis
+    n_top_genes: int, optional (default: `10`)
+        number of differentially expressed genes to visualize when hovering
+        over the cluster
+    de_values: list, str, optional (default: `'names, scores, pvals_ads, logfoldchanges'`)
+        list or comma-seperated values of keys in `adata.uns['rank_genes_groups'].keys()`
+        which are to be shown for each DE genes
+    cell_keys: list, str, optional (default: '')
+        keys in `adata.obs.key_values()` to be shown for each cell when hovering over it
+    n_neighbors: int, optional (default: `5`)
+        number of neighbors for KNN classifier, which controls how the
+        convex hull drawn around each cluster looks like
+    fill_alpha: float, optional (default: `0.1`)
+        alpha value of the cluster colors
+    show_hull: bool, optional (default: `True`)
+        whether to show the convex hull drawn along the cluster
+
+    Returns
+    --------
+    None
+    """
+    #TODO: test if cell_keys='' works
 
     if 'rank_genes_groups' not in adata.uns_keys():
         raise ValueError('Run differential expression first.')
@@ -705,12 +846,12 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
         else:
             de_values = []
 
-    if isinstance(cell_values, str):
-        cell_values = list(dict.fromkeys(map(str.strip, cell_values.split(','))))
-        if cell_values != ['']:
-            assert all(map(lambda k: k in adata.obs.keys(), cell_values)), 'Not all keys are in `adata.obs.keys()`.'
+    if isinstance(cell_keys, str):
+        cell_keys = list(dict.fromkeys(map(str.strip, cell_keys.split(','))))
+        if cell_keys != ['']:
+            assert all(map(lambda k: k in adata.obs.keys(), cell_keys)), 'Not all keys are in `adata.obs.keys()`.'
         else:
-            cell_values = []
+            cell_keys = []
 
     if f'X_{basis}' not in adata.obsm.keys():
         raise ValueError(f'Key `X_{basis}` not found in adata.obsm.')
@@ -719,11 +860,11 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
         components = np.asarray(components)
 
     key = adata.uns['rank_genes_groups']['params']['groupby']
-    if key not in cell_values:
-        cell_values.insert(0, key)
+    if key not in cell_keys:
+        cell_keys.insert(0, key)
 
     df = pd.DataFrame(adata.obsm[f'X_{basis}'][:, components - 1], columns=['x', 'y'])
-    for k in cell_values:
+    for k in cell_keys:
         df[k] = list(map(str, adata.obs[k]))
 
     knn = neighbors.KNeighborsClassifier(n_neighbors)
@@ -732,7 +873,7 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
 
     conv_hulls = df[df[key] == df['prediction']].groupby(key).apply(lambda df: df.iloc[ConvexHull(np.vstack([df['x'], df['y']]).T).vertices])
 
-    mapper = create_mapper(adata, key)
+    mapper = _create_mapper(adata, key)
     categories = adata.obs[key].cat.categories
     fig = figure(tools='pan, reset, wheel_zoom, lasso_select, save')
     legend_dict = defaultdict(list)
@@ -742,7 +883,7 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
         data_source =  ColumnDataSource(d)
         legend_dict[k].append(fig.scatter('x', 'y', source=data_source, color={'field': key, 'transform': mapper}, size=5, muted_alpha=0))
 
-    hover_cell = HoverTool(renderers=[r[0] for r in legend_dict.values()], tooltips=[(f'{key}', f'@{key}')] + [(f'{k}', f'@{k}') for k in cell_values[1:]])
+    hover_cell = HoverTool(renderers=[r[0] for r in legend_dict.values()], tooltips=[(f'{key}', f'@{key}')] + [(f'{k}', f'@{k}') for k in cell_keys[1:]])
 
     c_hulls = conv_hulls.copy()
     de_possible = conv_hulls[key].isin(adata.uns['rank_genes_groups']['names'].dtype.names)
@@ -787,7 +928,7 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
     
 
     fig.toolbar.active_inspect = [hover_group]
-    if len(cell_values) > 1:
+    if len(cell_keys) > 1:
         fig.add_tools(hover_group, hover_cell)
     else:
         fig.add_tools(hover_group)
@@ -799,12 +940,42 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
     show(fig)
 
 
-def cmap_to_colors(cmap_vals):
+def _cmap_to_colors(cmap_vals):
     return list(('#' + ''.join(map(lambda val: '{:02x}'.format(val).upper(), item[:-1])) for item in cmap_vals))
 
 
 def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], markers=None,
-               fade=True, highlight_only=None, palette=None):
+               p=2, highlight_cutoff=True, highlight_only=None, palette=None):
+    """
+    Display
+
+    Params
+    --------
+    adata: AnnData
+        annotated data object
+    bases: list(str), optional (default:`['umap', 'pca']`)
+        list of bases to use when plotting; note that only the first plot
+        is currently now hoverable
+    components: list(int), optional (default: `[1, 2]`)
+        list of components for each bases
+    markers: list(str), optional (default: `None`)
+        list of genes in `adata.var_names`, which are used to compute the distance;
+        if None, take all the genes
+    p: int, optional (default: `2`)
+        norm to use
+    highlight_cutoff: bool, optional (default: `True`)
+        if `True`, do not color in cells whose distance is further away
+        than the threshold specified by the slider
+    highlight_only: 'str', optional (default: `None`)
+        key in `adata.obs`, which makes highlighting work only on given clusters
+    palette: matplotlib.colors.Colormap, optional (default: `None`)
+        colormap to use
+
+    Returns
+    --------
+    None
+    """
+    #TODO: test comp
 
     assert isinstance(palette, matplotlib.colors.Colormap), '`palette` must be instance of `matplotlib.colors.Colormap`'
     assert len(components) == 2, f'`components` argument must be of length 2.'
@@ -820,10 +991,13 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], markers=None,
 
     gene_subset = np.in1d(adata.var_names, markers)
     dmat = pd.DataFrame(distance_matrix(adata.X[:, gene_subset],
-                                        adata.X[:, gene_subset]),
+                                        adata.X[:, gene_subset], p=p),
                         columns=list(map(str, range(adata.n_obs))))
     df = pd.concat([pd.DataFrame(adata.obsm[f'X_{base}'][:, components - (base != 'diffmap')], columns=[f'x{i}', f'y{i}'])
                     for i, base in enumerate(bases)] + [dmat], axis=1)
+
+    #df = pd.concat([pd.DataFrame(adata.obsm[f'X_{basis}'][:, comp - (basis != 'diffmap')], columns=[f'x{i}', f'y{i}'])
+    #                for i, (basis, comp) in enumerate(zip(bases, components))] + [dmat], axis=1)
     df['color'] = np.nan
     df['index'] = range(len(df))
     df['hl_key'] = list(adata.obs[highlight_only]) if highlight_only is not None else 0
@@ -831,7 +1005,7 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], markers=None,
     ds = ColumnDataSource(df)
     start_ix = str(adata.uns.get('iroot', 0))
     palette = cm.RdYlBu if palette is None else palette
-    mapper = linear_cmap(field_name='color', palette=cmap_to_colors(palette(range(palette.N), 1., bytes=True)),
+    mapper = linear_cmap(field_name='color', palette=_cmap_to_colors(palette(range(palette.N), 1., bytes=True)),
                          low=df[start_ix].min(), high=df[start_ix].max())
 
     figs, renderers = [], []
@@ -851,13 +1025,13 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], markers=None,
     update_color_code = f'''
         source.data['color'] = source.data[first].map(
             (x, i) => {{ return isNaN(x) ||
-                        {'' if fade else 'x > slider.value || '}
+                        {'x > slider.value || ' if highlight_cutoff else ''}
                         source.data['hl_key'][first] != source.data['hl_key'][i]  ? NaN : x; }}
         );
     '''
     slider.callback = CustomJS(args={'slider': slider, 'mapper': mapper['transform'], 'source': ds, 'col': col_ds}, code=f'''
         mapper.high = slider.value;
-        var first = col.data['value']
+        var first = col.data['value'];
         {update_color_code}
     ''')
 
@@ -884,5 +1058,89 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], markers=None,
     show(column(slider, row(*figs)))
 
 
-if __name__ == '__main__':
-    pass
+def plot_cell_indices(adata, key='group', basis='diffmap', components=[1, 2],
+                      cell_keys='',
+                      legend_loc='top_right', tools='pan, reset, wheel_zoom, save'):
+    """
+    Plot cell indices. Useful when trying to set adata.uns['iroot'].
+
+    Params
+    --------
+    adata: AnnData Object
+        annotated data object
+    key: str, optional (default: `"group"`)
+        key in adata.obs to color
+    basis: str, optional (default: `"diffmap"`)
+        basis to use
+    cell_keys: str, list(str), optional (default: `''`)
+        keys to display from `adata.obs.key_values()` when hovering over cell
+    components: list[int], optional (default: `[1, 2]`)
+        which components of the basis to use
+    legend_loc: str, optional (default `"top_right"`)
+        location of the legend
+    tools: str, optional (default: `"pan, reset, wheel_zoom, save"`)
+        tools for the plot
+
+    Returns
+    --------
+    None
+    """
+
+    if key not in adata.obs:
+        raise ValueError(f'{key} not found in adata.obs')
+
+    if f'X_{basis}' not in adata.obsm_keys():
+        raise ValueError(f'basis `X_{basis}` not found in adata.obsm')
+
+    if not isinstance(components, type(np.array)):
+        components = np.array(components)
+
+    if isinstance(cell_keys, str):
+        cell_keys = list(dict.fromkeys(map(str.strip, cell_keys.split(','))))
+        if cell_keys != ['']:
+            assert all(map(lambda k: k in adata.obs.keys(), cell_keys)), 'Not all keys are in `adata.obs.keys()`.'
+        else:
+            cell_keys = []
+
+    df = pd.DataFrame(adata.obsm[f'X_{basis}'][:, components - (basis != 'diffmap')], columns=['x', 'y'])
+
+    for k in cell_keys:
+        df[k] = list(map(str, adata.obs[k]))
+
+    df['index'] = range(len(df))
+    df[key] = list(adata.obs[key])
+
+    if hasattr(adata, 'obs_names'):
+        cell_keys.insert(0, 'name')
+        df['name'] = list(adata.obs_names)
+
+    if 'index' not in cell_keys:
+        cell_keys.insert(0, 'index')
+
+    palette = adata.uns.get(f'{key}_colors', viridis(len(df[key].unique())))
+
+    p = figure(title=f'{key}', tools=tools)
+    key_col = adata.obs[key].astype('category') if adata.obs[key].dtype.name != 'category' else  adata.obs[key]
+    renderers = []
+    for c, color in zip(key_col.cat.categories, palette):
+        data = ColumnDataSource(df[df[key] == c])
+        renderers.append(p.scatter(x='x', y='y', size=10, color=color, legend=str(c), source=data))
+    hover_cell = HoverTool(renderers=renderers, tooltips=[(f'{k}', f'@{k}') for k in cell_keys])
+
+    p.legend.location = legend_loc
+    p.xaxis.axis_label = f'{basis}_{components[0]}'
+    p.yaxis.axis_label = f'{basis}_{components[1]}'
+
+    source = ColumnDataSource(df)
+    labels = LabelSet(x='x', y='y', text='index',
+                      x_offset=4, y_offset=4,
+                      level='glyph', source=source, render_mode='canvas')
+
+    labels.visible = False
+    p.add_tools(hover_cell)
+    p.add_layout(labels)
+
+    button = Button(label='Toggle Indices', button_type='primary')
+    button.callback = CustomJS(args=dict(l=labels), code='l.visible = !l.visible;')
+
+    show(column(button, p))
