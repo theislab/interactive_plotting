@@ -9,9 +9,11 @@ from functools import reduce
 from collections import defaultdict
 from itertools import product
 
+import warnings
+
 import numpy as np
 import pandas as pd
-import scanpy as sc
+import scanpy.api as sc
 
 import matplotlib.cm as cm
 import matplotlib
@@ -264,8 +266,6 @@ def hist_thresh(adata, key, categories=dict(), bases=['umap'], componentss=[[1, 
     source = ColumnDataSource(data=dict(hist=hist, l_edges=edges[:-1], r_edges=edges[1:],
                               category=['default'] * len(hist), indices=[[]] * len(hist)))
 
-    # df = pd.DataFrame(adata.obsm[f'X_umap'][:, componentss[0] - 1], columns=['x', 'y'])
-    # TODO: remove i
     df = pd.concat([pd.DataFrame(adata.obsm[f'X_{basis}'][:, components - (basis != 'diffmap')], columns=[f'x_{basis}', f'y_{basis}'])
                     for basis, components in zip(bases, componentss)], axis=1)
     df['values'] = list(adata.obs[key])
@@ -359,16 +359,6 @@ def hist_thresh(adata, key, categories=dict(), bases=['umap'], componentss=[[1, 
 
 def smooth_expression(x, y, n_points=100, mode='gp', kernel_params=dict(), kernel_default_params=dict(),
                      kernel_expr=None, default=False, **opt_params):
-    kernels = dict(const=ConstantKernel,
-                   white=WhiteKernel,
-                   rbf=RBF,
-                   mat=Matern,
-                   rq=RationalQuadratic,
-                   esn=ExpSineSquared,
-                   dp=DotProduct,
-                   pw=PairwiseKernel)
-
-    x_test = np.linspace(0, 1, n_points)[:, None]
     """Smooth out the expression of given values.
 
     Params
@@ -380,7 +370,7 @@ def smooth_expression(x, y, n_points=100, mode='gp', kernel_params=dict(), kerne
     n_points: int, optional (default: `100`)
         number of points to extrapolate
     mode: str, optional (default: `'gp'`)
-        which regressor to use, available (`gp`: Gaussian process, `krr`: Kernel ridge regression)
+        which regressor to use, available (`'gp'`: Gaussian Process, `'krr'`: Kernel Ridge Regression)
     kernel_params: dict, optional (default: `dict()`)
         dictionary of kernels with their parameters, keys correspond to variable names
         which can be later combined using  `kernel_expr`. Supported kernels: `ConstantKernel`, `WhiteKernel`,
@@ -585,7 +575,7 @@ def plot_velocity(adata, genes=None, paths=[], n_velocity_genes=5,
     length_scale : float, optional (default `0.2`)
         length scale for RBF kernel
     mode: str, optional (default: `krr`)
-        Whether to use Kernel Ridge Regressin (krr) or a Gaussian Process (gp) for
+        Whether to use Kernel Ridge Regression ('krr') or a Gaussian Process ('gp') for
         smoothing the expression values
     differentiate: bool, optional (default: `True`)
         Whether to take the derivative of gene expression
@@ -593,7 +583,7 @@ def plot_velocity(adata, genes=None, paths=[], n_velocity_genes=5,
         Whether to return computed values
     exp_key: str, optional (default:`'X'"`)
         key from adata.layers or just 'X' to get gene expression values
-    velo_key_ss, velo_key_dyn: str, optional (default: `"velocity"`)
+    velo_key_ss, velo_key_dyn: str, optional (default: `"velocity"`) TODO: not working
         key from adata.layers to get velocity  values for the steady state (ss)
         and the dynamical (dyn) model
     scatter_kwgs: dict or None, optional (default: `None`)
@@ -712,11 +702,10 @@ def plot_velocity(adata, genes=None, paths=[], n_velocity_genes=5,
                 print('ss_score = {:2.2e}\ndyn_score = {:2.2e}'.format(score_ss, score_dyn))
 
         dataframe = pd.DataFrame(data, index=list(map(lambda path: ', '.join(path), paths)))
+        figs.append(_create_velocity_figure(dataframe, color_key, title=gene, color_mapper=mapper))
 
-        if plotting:
-            figs.append(_create_velocity_figure(dataframe, color_key, title=gene, color_mapper=mapper))
-
-    show(column(*figs))
+    if plotting:
+        show(column(*figs))
 
     if return_values:
         return data
@@ -785,7 +774,7 @@ def _create_velocity_figure(dataframe, color_key, title, color_mapper):
                     x_mean = ds['x_mean']
                     x_cov = ds['x_cov']
                     band_x = np.append(ds['x_test'][::-1], ds['x_test'])
-                    # black magic, known only to wizards
+                    # black magic, known only to the most illustrious of wizards
                     band_y = np.append((x_mean - np.sqrt(np.diag(x_cov)))[::-1], (x_mean + np.sqrt(np.diag(x_cov))))
                     fig.patch(band_x, band_y, alpha=0.1, line_color='black', fill_color='black',
                               legend=path, line_dash='dotdash', muted_alpha=0)
@@ -935,7 +924,7 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
 
     legend = Legend(items=list(legend_dict.items()), location='top_right')
     fig.add_layout(legend)
-    fig.legend.click_policy = 'hide'
+    fig.legend.click_policy = 'hide'  # hide does disable hovering, whereas 'mute' does not
 
     show(fig)
 
@@ -945,9 +934,9 @@ def _cmap_to_colors(cmap_vals):
 
 
 def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], markers=None,
-               p=2, highlight_cutoff=True, highlight_only=None, palette=None):
+               distance=2, highlight_cutoff=True, highlight_only=None, palette=None):
     """
-    Display
+    Display the distances of cells from currently highlighted cell.
 
     Params
     --------
@@ -956,29 +945,36 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], markers=None,
     bases: list(str), optional (default:`['umap', 'pca']`)
         list of bases to use when plotting; note that only the first plot
         is currently now hoverable
-    components: list(int), optional (default: `[1, 2]`)
+    components: list(int), list(list(int)), optional (default: `[1, 2]`)
         list of components for each bases
     markers: list(str), optional (default: `None`)
         list of genes in `adata.var_names`, which are used to compute the distance;
         if None, take all the genes
-    p: int, optional (default: `2`)
-        norm to use
+    distance: int, str, optional (default: `2`)
+        if `int`, then p-norm to use, if `'dpt'` for dpt
     highlight_cutoff: bool, optional (default: `True`)
         if `True`, do not color in cells whose distance is further away
         than the threshold specified by the slider
     highlight_only: 'str', optional (default: `None`)
         key in `adata.obs`, which makes highlighting work only on given clusters
-    palette: matplotlib.colors.Colormap, optional (default: `None`)
-        colormap to use
+    palette: matplotlib.colors.Colormap, list(str), optional (default: `None`)
+        colormap to use, if None
 
     Returns
     --------
     None
     """
-    #TODO: test comp
 
-    assert isinstance(palette, matplotlib.colors.Colormap), '`palette` must be instance of `matplotlib.colors.Colormap`'
-    assert len(components) == 2, f'`components` argument must be of length 2.'
+    palette = cm.RdYlBu if palette is None else palette
+    if isinstance(palette, matplotlib.colors.Colormap):
+        palette = _cmap_to_colors(palette(range(palette.N), 1., bytes=True))
+
+    if not isinstance(components[0], list):
+        components = [components]
+
+    if len(components) != len(bases):
+        assert len(bases) % len(components) == 0 and len(bases) >= len(components)
+        components = components * (len(bases) // len(components))
 
     if not isinstance(components, np.ndarray):
         components = np.asarray(components)
@@ -986,26 +982,33 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], markers=None,
     if highlight_only is not None:
         assert highlight_only in adata.obs_keys(), f'`{highlight_only}` is not in adata.obs_keys().'
 
-    if markers is None:
-        markers = markers = adata.var_names 
-
+    markers = adata.var_names if markers is None else markers
     gene_subset = np.in1d(adata.var_names, markers)
-    dmat = pd.DataFrame(distance_matrix(adata.X[:, gene_subset],
-                                        adata.X[:, gene_subset], p=p),
-                        columns=list(map(str, range(adata.n_obs))))
-    df = pd.concat([pd.DataFrame(adata.obsm[f'X_{base}'][:, components - (base != 'diffmap')], columns=[f'x{i}', f'y{i}'])
-                    for i, base in enumerate(bases)] + [dmat], axis=1)
 
-    #df = pd.concat([pd.DataFrame(adata.obsm[f'X_{basis}'][:, comp - (basis != 'diffmap')], columns=[f'x{i}', f'y{i}'])
-    #                for i, (basis, comp) in enumerate(zip(bases, components))] + [dmat], axis=1)
+    start_ix = str(adata.uns.get('iroot', 0))
+    if distance != 'dpt':
+        dmat = distance_matrix(adata.X[:, gene_subset], adata.X[:, gene_subset], p=distance)
+    else:
+        if not all(gene_subset):
+            warnings.warn('markers is not None, are you sure this is what you want when using `dpt` distance?')
+
+        dmat = []
+        ad_tmp = adata.copy()
+        ad_tmp = ad_tmp[:, gene_subset]
+        for i in range(ad_tmp.n_obs):
+            ad_tmp.uns['iroot'] = i
+            sc.tl.dpt(ad_tmp)
+            dmat.append(list(ad_tmp.obs['dpt_pseudotime']))
+
+    dmat = pd.DataFrame(dmat, columns=list(map(str, range(adata.n_obs))))
+    df = pd.concat([pd.DataFrame(adata.obsm[f'X_{basis}'][:, comp - (basis != 'diffmap')], columns=[f'x{i}', f'y{i}'])
+                    for i, (basis, comp) in enumerate(zip(bases, components))] + [dmat], axis=1)
     df['color'] = np.nan
     df['index'] = range(len(df))
     df['hl_key'] = list(adata.obs[highlight_only]) if highlight_only is not None else 0
 
     ds = ColumnDataSource(df)
-    start_ix = str(adata.uns.get('iroot', 0))
-    palette = cm.RdYlBu if palette is None else palette
-    mapper = linear_cmap(field_name='color', palette=_cmap_to_colors(palette(range(palette.N), 1., bytes=True)),
+    mapper = linear_cmap(field_name='color', palette=palette,
                          low=df[start_ix].min(), high=df[start_ix].max())
 
     figs, renderers = [], []
@@ -1020,7 +1023,7 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], markers=None,
 
     end = dmat.max().max()
     slider = Slider(start=0, end=end, value=end / 2, step=end / 1000,
-            title='Distance')
+            title='Distance ' +  '(dpt)' if distance == 'dpt' else f'({distance}-norm)')
     col_ds = ColumnDataSource(dict(value=[start_ix]))
     update_color_code = f'''
         source.data['color'] = source.data[first].map(
@@ -1087,10 +1090,10 @@ def plot_cell_indices(adata, key='group', basis='diffmap', components=[1, 2],
     """
 
     if key not in adata.obs:
-        raise ValueError(f'{key} not found in adata.obs')
+        raise ValueError(f'{key} not found in `adata.obs`')
 
     if f'X_{basis}' not in adata.obsm_keys():
-        raise ValueError(f'basis `X_{basis}` not found in adata.obsm')
+        raise ValueError(f'basis `X_{basis}` not found in `adata.obsm`')
 
     if not isinstance(components, type(np.array)):
         components = np.array(components)
