@@ -7,5 +7,5 @@
 
 # Usage
     - import sys  
-    - sys.path.insert(0, <PATH_TO/interactive_plotting.py>)  
+    - sys.path.insert(0, <PATH_TO/interactive_plotting_src>)  
     - import interactive_plotting as ipl  

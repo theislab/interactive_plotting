@@ -175,9 +175,10 @@ def interactive_histograms(adata, keys=['n_counts', 'n_genes'],
     # used for grupping
     ad_gs = _create_adata_groups()
     
+    cols = []
     for key in keys:
         # create histogram
-        cols, callbacks = [], []
+        callbacks = []
         fig = figure(*args, tools=tools, **kwargs)
         slider = Slider(start=min_bins, end=max_bins, value=0, step=1,
                         title='Bins')
@@ -241,7 +242,6 @@ def interactive_histograms(adata, keys=['n_counts', 'n_genes'],
 
         fig.legend.click_policy = 'mute'
         cols.append(column(slider, button, fig))
-
 
     # transform list of pairs of figures and sliders into list of lists, where
     # each sublist has length <= 2
