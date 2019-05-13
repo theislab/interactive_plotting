@@ -744,7 +744,7 @@ def plot_velocity(adata, genes=None, paths=[], n_velocity_genes=5,
 
                 print('ss_score = {:2.2e}\ndyn_score = {:2.2e}'.format(score_ss, score_dyn))
 
-        dataframe = pd.DataFrame(data, index=list(map(lambda path: ', '.join(path), paths)))
+        dataframe = pd.DataFrame(data, index=list(map(lambda path: ', '.join(map(str, path)), paths)))
         figs.append(_create_velocity_figure(dataframe, color_key, title=gene, color_mapper=mapper))
 
     show(column(*figs))
@@ -1023,13 +1023,13 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], key='group', mar
     dmat = pd.DataFrame(dmat, columns=list(map(str, range(adata.n_obs))))
     df = pd.concat([pd.DataFrame(adata.obsm[f'X_{basis}'][:, comp - (basis != 'diffmap')], columns=[f'x{i}', f'y{i}'])
                     for i, (basis, comp) in enumerate(zip(bases, components))] + [dmat], axis=1)
-    df['color'] = np.nan
+    df['hl_color'] = np.nan
     df['index'] = range(len(df))
     df['hl_key'] = list(adata.obs[highlight_only]) if highlight_only is not None else 0
     df[key] = list(map(str, adata.obs[key]))
 
     ds = ColumnDataSource(df)
-    mapper = linear_cmap(field_name='color', palette=palette,
+    mapper = linear_cmap(field_name='hl_color', palette=palette,
                          low=df[start_ix].min(), high=df[start_ix].max())
     static_fig_mapper = _create_mapper(adata, key)
 
@@ -1059,7 +1059,7 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], key='group', mar
             title='Distance ' +  '(dpt)' if distance == 'dpt' else f'({distance}-norm)')
     col_ds = ColumnDataSource(dict(value=[start_ix]))
     update_color_code = f'''
-        source.data['color'] = source.data[first].map(
+        source.data['hl_color'] = source.data[first].map(
             (x, i) => {{ return isNaN(x) ||
                         {'x > slider.value || ' if highlight_cutoff else ''}
                         source.data['hl_key'][first] != source.data['hl_key'][i]  ? NaN : x; }}
@@ -1075,10 +1075,10 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], key='group', mar
     h_tool.callback = CustomJS(args=dict(source=ds, slider=slider, col=col_ds), code=f'''
         var indices = cb_data.index['1d'].indices;
         if (indices.length == 0) {{
-            source.data['color'] = source.data['color'];
+            source.data['hl_color'] = source.data['hl_color'];
         }} else {{
             first = indices[0];
-            source.data['color'] = source.data[first];
+            source.data['hl_color'] = source.data[first];
             {update_color_code}
             col.data['value'] = first;
             col.change.emit();
