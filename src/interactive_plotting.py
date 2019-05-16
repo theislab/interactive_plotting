@@ -1054,7 +1054,7 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], key='group', mar
 
     fig = figs[0]
 
-    end = dmat.max().max()
+    end = dmat[~np.isinf(dmat)].max().max()
     slider = Slider(start=0, end=end, value=end / 2, step=end / 1000,
             title='Distance ' +  '(dpt)' if distance == 'dpt' else f'({distance}-norm)')
     col_ds = ColumnDataSource(dict(value=[start_ix]))
@@ -1094,8 +1094,7 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], key='group', mar
     show(column(slider, row(*static_figs), row(*figs)))
 
 
-def plot_cell_indices(adata, key='group', basis='diffmap', components=[1, 2],
-                      cell_keys='',
+def plot_cell_indices(adata, key='group', basis='diffmap', components=[1, 2], cell_keys='',
                       legend_loc='top_right', tools='pan, reset, wheel_zoom, save'):
     """
     Plot cell indices. Useful when trying to set adata.uns['iroot'].
