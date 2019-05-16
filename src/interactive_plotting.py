@@ -949,8 +949,8 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
 
 
 def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], key='group', markers=None,
-               distance=2, highlight_cutoff=True, highlight_only=None, palette=None,
-               show_legend=False):
+               distance=2, highlight_cutoff=True,
+               highlight_only=None, palette=None, show_legend=False):
     """
     Display the distances of cells from currently highlighted cell.
 
@@ -1020,6 +1020,7 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], key='group', mar
             sc.tl.dpt(ad_tmp)
             dmat.append(list(ad_tmp.obs['dpt_pseudotime']))
 
+
     dmat = pd.DataFrame(dmat, columns=list(map(str, range(adata.n_obs))))
     df = pd.concat([pd.DataFrame(adata.obsm[f'X_{basis}'][:, comp - (basis != 'diffmap')], columns=[f'x{i}', f'y{i}'])
                     for i, (basis, comp) in enumerate(zip(bases, components))] + [dmat], axis=1)
@@ -1054,7 +1055,7 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], key='group', mar
 
     fig = figs[0]
 
-    end = dmat[~np.isinf(dmat)].max().max()
+    end = dmat[~np.isinf(dmat)].max().max() if distance != 'dpt' else 1.0
     slider = Slider(start=0, end=end, value=end / 2, step=end / 1000,
             title='Distance ' +  '(dpt)' if distance == 'dpt' else f'({distance}-norm)')
     col_ds = ColumnDataSource(dict(value=[start_ix]))
@@ -1069,6 +1070,7 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], key='group', mar
         mapper.high = slider.value;
         var first = col.data['value'];
         {update_color_code}
+        source.change.emit();
     ''')
 
     h_tool = HoverTool(renderers=renderers, tooltips=[], show_arrow=False)
@@ -1077,7 +1079,7 @@ def multi_link(adata, bases=['umap', 'pca'], components=[1, 2], key='group', mar
         if (indices.length == 0) {{
             source.data['hl_color'] = source.data['hl_color'];
         }} else {{
-            first = indices[0];
+            var first = indices[0];
             source.data['hl_color'] = source.data[first];
             {update_color_code}
             col.data['value'] = first;
