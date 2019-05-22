@@ -950,6 +950,9 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_de_genes=10,
     fig.add_layout(legend)
     fig.legend.click_policy = 'hide'  # hide does disable hovering, whereas 'mute' does not
 
+    fig.xaxis.axis_label = f'{basis}_{components[0]}'
+    fig.yaxis.axis_label = f'{basis}_{components[1]}'
+
     show(fig)
 
 
