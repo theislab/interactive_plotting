@@ -592,7 +592,7 @@ def pred_exp(x_test, y_test):
     return y_pred
 
 
-def plot_velocity(adata, genes=None, paths=[], n_velocity_genes=5,
+def plot_velocity(adata, paths, genes=None, n_velocity_genes=5,
               exp_key='X', mode='gp', smooth=True, length_scale=0.2,
               color_key='louvain',
               path_key='louvain',
@@ -609,6 +609,11 @@ def plot_velocity(adata, genes=None, paths=[], n_velocity_genes=5,
     --------
     adata: AnnData
         annotated data matrix
+    paths: list(list(str))
+        different paths to visualize in a single plot
+    n_velocity_genes: int, optional (default: 5)
+        when `genes` is None, take `n_velocity_genes` from
+        `adata.var['velocity_genes']`
     genes: list or None, optional (default: `None`)
         list of genes to show
     n_points: int, optional (default: `100`)
