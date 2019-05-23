@@ -7,5 +7,7 @@
 
 # Usage
     - import sys  
-    - sys.path.insert(0, <PATH_TO/interactive_plotting_src>)  
+    - sys.path.insert(0, <path/to/interactive_plotting/src>)  
     - import interactive_plotting as ipl  
+    - from bokeh.io import output_notebook
+    - output_notebook()
