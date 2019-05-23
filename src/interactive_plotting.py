@@ -640,11 +640,11 @@ def thresholding_hist(adata, key, categories, bases=['umap'], components=[1, 2],
     show(column(row(hist_fig, column(slider, *inputs)), *emb_figs))
 
 
-def velocity_scatter(adata, paths, genes=None, mode='gp', exp_key='X',
-                     n_velocity_genes=5, length_scale=0.2,
-                     path_key='louvain', color_key='louvain',
-                     legend_loc='top_right', plot_width=None, plot_height=None,
-                     **kwargs):
+def velocity_plot(adata, paths, genes=None, mode='gp', exp_key='X',
+                  n_velocity_genes=5, length_scale=0.2,
+                  path_key='louvain', color_key='louvain',
+                  legend_loc='top_right', plot_width=None, plot_height=None,
+                  **kwargs):
     """
     Function which shows expression levels as well as velocity per gene as a function of DPT.
 
@@ -900,7 +900,7 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_genes=10,
     show(fig)
 
 
-def linkplot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
+def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
              distance=2, cutoff=True, highlight_only=None, palette=None,
              show_legend=False, legend_loc='top_right', plot_width=None, plot_height=None):
     """
