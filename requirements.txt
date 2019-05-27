@@ -1,8 +1,8 @@
-bokeh==1.0.4
-scipy==1.2.0
-scanpy==1.4
-fastdtw==0.3.2
-matplotlib==3.0.2
-pandas==0.23.4
-numpy==1.15.4
-scikit_learn==0.21.0
+scanpy
+scipy
+scikit_learn
+numpy
+pandas
+matplotlib
+bokeh>=1.0.4
+fastdtw>=0.3.2

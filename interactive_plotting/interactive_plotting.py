@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-    
 from sklearn.gaussian_process.kernels import *
 from sklearn import neighbors
 from scipy.sparse import issparse
