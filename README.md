@@ -28,35 +28,35 @@ Here are some exemplary figures for each of the plotting functions.
 ```python
 ipl.link_plot
    ``` 
-![link plot](https://github.com/theislab/interactive_plotting/tree/master/resources/images/link_plot.png?raw=true "Link plot")
+![link plot](resources/images/link_plot.png?raw=true "Link plot")
 
 ---
 
 ```python
 ipl.highlight_de
 ```
-![highlight differential expression plot](https://github.com/theislab/interactive_plotting/tree/master/resources/images/highlight_de.png?raw=true "Highlight differential expression")
+![highlight differential expression plot](resources/images/highlight_de.png?raw=true "Highlight differential expression")
 
 ---
 
 ```python
 ipl.velocity_plot
 ```
-![velocity plot](https://github.com/theislab/interactive_plotting/tree/master/resources/images/velocity_plot.png?raw=true "Velocity plot")
+![velocity plot](resources/images/velocity_plot.png?raw=true "Velocity plot")
 
 ---
 
 ```python
 ipl.interactive_hist
 ```
-![interactive histogram](https://github.com/theislab/interactive_plotting/tree/master/resources/images/inter_hist.png?raw=true "Interactive histogram")
+![interactive histogram](resources/images/inter_hist.png?raw=true "Interactive histogram")
 
 ---
 
 ```python
 ipl.thresholding_hist
 ```
-![thresholding histogram](https://github.com/theislab/interactive_plotting/tree/master/resources/images/thresh_hist.png?raw=true "Thresholding histogram")
+![thresholding histogram](resources/images/thresh_hist.png?raw=true "Thresholding histogram")
 
 ---
 
