@@ -64,3 +64,4 @@ ipl.thresholding_hist
 ipl.highlight_indices
 ```
 ![highlight cell indices plot](https://github.com/theislab/interactive_plotting/tree/master/resources/images/highlight_indices.png?raw=true "Highlight cell indices")
+
