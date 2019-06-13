@@ -730,6 +730,11 @@ def velocity_plot(adata, paths, genes=None, mode='gp', exp_key='X',
             data[color_key].append(list(map(str, ad.obs[color_key])))
 
             assert all(gene_exp[ix] > 0)
+
+            if len(gene_exp[ix]) == 0:
+                print(f'All counts are 0 for `{gene}`')
+                continue
+
             x_test, exp_mean, exp_cov = _smooth_expression(dpt[ix, None], gene_exp[ix], mode=mode,
                 n_points=len(dpt), kernel_params=dict(k=dict(length_scale=length_scale)), **kwargs)
                                                       
