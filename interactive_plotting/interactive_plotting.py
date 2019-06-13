@@ -586,8 +586,8 @@ def thresholding_hist(adata, key, categories, bases=['umap'], components=[1, 2],
         inp_max = TextInput(name='test', value=f'{end}', title=f'{cat}/max')
 
         code_start.append(f'''
-            var min_{cat} = parseInt(inp_min_{cat}.value);
-            var max_{cat} = parseInt(inp_max_{cat}.value);
+            var min_{cat} = parseFloat(inp_min_{cat}.value);
+            var max_{cat} = parseFloat(inp_max_{cat}.value);
         ''')
         code_mid.append(f'''
             var mid_{cat} = (source.data['r_edges'][i] - source.data['l_edges'][i]) / 2;
