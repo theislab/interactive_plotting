@@ -14,7 +14,9 @@ cd interactive_plotting
 pip install .
 ```
 
-## Usage
+## Getting Started
+We recommend checking out the [tutorial notebook](./notebooks/interactive_plotting_tutorial.ipynb).
+
 In your Jupyter Notebook, execute the following lines:
 ```python
 import interactive_plotting as ipl  
@@ -40,9 +42,9 @@ ipl.highlight_de
 ---
 
 ```python
-ipl.velocity_plot
+ipl.gene_trend
 ```
-![velocity plot](resources/images/velocity_plot.png?raw=true "Velocity plot")
+![gene trend](resources/images/gene_trend.png?raw=true "Gene trend")
 
 ---
 
