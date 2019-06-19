@@ -74,6 +74,10 @@ def _to_hex(palette):
     if not isinstance(palette, np.ndarray):
         palette = np.array(palette)
 
+    if isinstance(palette[0], str):
+        assert all(map(colors.is_color_like, palette)), 'Not all strings are color like.'
+        return palette
+
     minn = np.min(palette)
     # normalize to 0..1
     palette = (palette - minn) / (np.max(palette) - minn)
