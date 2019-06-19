@@ -14,6 +14,7 @@ import pandas as pd
 import scanpy.api as sc
 
 import matplotlib.cm as cm
+import matplotlib.colors as colors
 import matplotlib
 
 from bokeh.plotting import figure, show
@@ -66,8 +67,22 @@ _inter_hist_js_code="""
 """
 
 
-def _cmap_to_colors(cmap_vals):
-    return list(('#' + ''.join(map(lambda val: '{:02x}'.format(val).upper(), item[:-1])) for item in cmap_vals))
+def _to_hex(palette):
+    """
+    Converts matplotlib color array to hex strings
+    """
+    if not isinstance(palette, np.ndarray):
+        palette = np.array(palette)
+
+    if isinstance(palette[0], str):
+        assert all(map(colors.is_color_like, palette)), 'Not all strings are color like.'
+        return palette
+
+    minn = np.min(palette)
+    # normalize to 0..1
+    palette = (palette - minn) / (np.max(palette) - minn)
+
+    return [colors.to_hex(c) if colors.is_color_like(c) else c for c in palette]
 
 
 def _set_plot_wh(fig, w, h):
@@ -97,6 +112,7 @@ def _create_mapper(adata, key):
     # TODO:
     # plate colors return float
     palette = adata.uns.get(f'{key}_colors', viridis(len(adata.obs[key].unique())))
+    palette = _to_hex(palette)
     key_col = adata.obs[key].astype('category') if adata.obs[key].dtype.name != 'category' else adata.obs[key]
     return CategoricalColorMapper(palette=palette, factors=list(map(str, key_col.cat.categories)))
 
@@ -951,7 +967,7 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
 
     palette = cm.RdYlBu if palette is None else palette
     if isinstance(palette, matplotlib.colors.Colormap):
-        palette = _cmap_to_colors(palette(range(palette.N), 1., bytes=True))
+        palette = _to_hex(palette(range(palette.N), 1., bytes=True))
 
     if not isinstance(components[0], list):
         components = [components]
@@ -1130,6 +1146,7 @@ def highlight_indices(adata, key, basis='diffmap', components=[1, 2], cell_keys=
         cell_keys.insert(0, 'index')
 
     palette = adata.uns.get(f'{key}_colors', viridis(len(df[key].unique())))
+    palette = _to_hex(palette)
 
     p = figure(title=f'{key}', tools=tools)
     _set_plot_wh(p, plot_width, plot_height)
