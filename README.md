@@ -66,3 +66,7 @@ ipl.thresholding_hist
 ipl.highlight_indices
 ```
 ![highlight cell indices plot](resources/images/highlight_indices.png?raw=true "Highlight cell indices")
+
+## Troubleshooting
+* [Notebook size is **huge**](issues/2) - This has to do with ```ipl.link_plot``` and ```ipl.velocity_plot```. Until a fix is found, we suggest removing these figures after you're done using them.
+* [Getting "OPub data rate exceeded" error](issues/7) - Try starting jupyter notebook as following: ```jupyter notebook --NotebookApp.iopub_data_rate_limit=1e10```. For generating jupyter config file, see [here](https://stackoverflow.com/questions/43288550/iopub-data-rate-exceeded-in-jupyter-notebook-when-viewing-image).
