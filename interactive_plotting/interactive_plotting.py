@@ -24,7 +24,7 @@ from bokeh.models.mappers import CategoricalColorMapper
 from bokeh.layouts import layout, column, row, GridSpec
 from bokeh.transform import linear_cmap, factor_mark, factor_cmap
 from bokeh.core.enums import MarkerType
-from bokeh.palettes import Set1, Set2, Set3, viridis
+from bokeh.palettes import Set1, Set2, Set3, inferno 
 from bokeh.models.widgets.buttons import Button
 
 
@@ -102,18 +102,25 @@ def _create_mapper(adata, key):
             annotated data object
         key: str
             key in `adata.obs.obs_keys()`, for which we want the colors; if no colors for given
-            column are found in `adata.uns[key_colors]`, use Viridis palette
+            column are found in `adata.uns[key_colors]`, use `inferno` palette
 
     Returns
     --------
         mapper: bokeh.models.mappers.CategoricalColorMapper
             mapper which maps valuems from `adata.obs[key]` to colors
     """
-    # TODO:
-    # plate colors return float
-    palette = adata.uns.get(f'{key}_colors', viridis(len(adata.obs[key].unique())))
+    is_categorical = adata.obs[key].dtype.name == 'category'
+    default_palette = cm.get_cmap('inferno', adata.n_obs if not is_categorical else len(adata.obs[key].unique()))
+    palette = adata.uns.get(f'{key}_colors', default_palette)
+
+    if palette is default_palette:
+        vals = adata.obs[key].unique() if is_categorical else adata.obs[key]
+        mapper = dict(zip(vals, range(len(vals))))
+        palette = palette([mapper[v] for v in vals])
+
     palette = _to_hex(palette)
-    key_col = adata.obs[key].astype('category') if adata.obs[key].dtype.name != 'category' else adata.obs[key]
+    key_col = adata.obs[key].astype('category') if not is_categorical else adata.obs[key]
+
     return CategoricalColorMapper(palette=palette, factors=list(map(str, key_col.cat.categories)))
 
 
@@ -950,7 +957,7 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
         key in `adata.obs_keys()`, which makes highlighting
         work only on clusters specified by this parameter
     palette: matplotlib.colors.Colormap; list(str), optional (default: `None`)
-        colormap to use, if None, use Viridis
+        colormap to use, if None, use Inferno 
     show_legend: bool, optional (default: `False`)
         display the legend also in the linked plot
     legend_loc: str, optional (default `'top_right'`)
@@ -1136,7 +1143,7 @@ def highlight_indices(adata, key, basis='diffmap', components=[1, 2], cell_keys=
         df[k] = list(map(str, adata.obs[k]))
 
     df['index'] = range(len(df))
-    df[key] = list(adata.obs[key])
+    df[key] = list(map(str, adata.obs[key]))
 
     if hasattr(adata, 'obs_names'):
         cell_keys.insert(0, 'name')
@@ -1145,23 +1152,31 @@ def highlight_indices(adata, key, basis='diffmap', components=[1, 2], cell_keys=
     if 'index' not in cell_keys:
         cell_keys.insert(0, 'index')
 
-    palette = adata.uns.get(f'{key}_colors', viridis(len(df[key].unique())))
-    palette = _to_hex(palette)
+    # TODO: use mapper
+    mapper = _create_mapper(adata, key)
+    # palette = adata.uns.get(f'{key}_colors', inferno(len(df[key].unique())))
+    # palette = _to_hex(palette)
 
     p = figure(title=f'{key}', tools=tools)
     _set_plot_wh(p, plot_width, plot_height)
 
-    key_col = adata.obs[key].astype('category') if adata.obs[key].dtype.name != 'category' else  adata.obs[key]
     renderers = []
-    for c, color in zip(key_col.cat.categories, palette):
-        data = ColumnDataSource(df[df[key] == c])
-        renderers.append([p.scatter(x='x', y='y', size=10, color=color, source=data, muted_alpha=0)])
-    hover_cell = HoverTool(renderers=list(np.ravel(renderers)), tooltips=[(f'{k}', f'@{k}') for k in cell_keys])
+    # for c, color in zip(key_col.cat.categories, palette):
+    if adata.obs[key].dtype.name == 'category':
+        key_col = adata.obs[key]
+        for c in key_col.cat.categories:
+            data = ColumnDataSource(df[df[key] == c])
+            renderers.append([p.scatter(x='x', y='y', size=10, color={'field': key, 'transform': mapper}, source=data, muted_alpha=0)])
 
-    if legend_loc is not None:
-        legend = Legend(items=list(zip(map(str, key_col.cat.categories), renderers)), location=legend_loc, click_policy='mute')
-        p.add_layout(legend)
-        p.legend.location = legend_loc
+        if legend_loc is not None:
+            legend = Legend(items=list(zip(map(str, key_col.cat.categories), renderers)), location=legend_loc, click_policy='mute')
+            p.add_layout(legend)
+            p.legend.location = legend_loc
+    else:
+        data = ColumnDataSource(df)
+        renderers.append([p.scatter(x='x', y='y', color={'field': key, 'transform': mapper}, size=10, source=data, muted_alpha=0)])
+
+    hover_cell = HoverTool(renderers=list(np.ravel(renderers)), tooltips=[(f'{k}', f'@{k}') for k in cell_keys])
 
     p.xaxis.axis_label = f'{basis}_{components[0]}'
     p.yaxis.axis_label = f'{basis}_{components[1]}'
