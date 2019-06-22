@@ -124,7 +124,7 @@ def _create_mapper(adata, key):
     return CategoricalColorMapper(palette=palette, factors=list(map(str, key_col.cat.categories)))
 
 
-def _smooth_expression(x, y, n_points=100, mode='gp', kernel_params=dict(), kernel_default_params=dict(),
+def _smooth_expression(x, y, n_points=100, dpt_range=[None, None], mode='gp', kernel_params=dict(), kernel_default_params=dict(),
                       kernel_expr=None, default=False, verbose=False, **opt_params):
     """Smooth out the expression of given values.
 
@@ -136,6 +136,8 @@ def _smooth_expression(x, y, n_points=100, mode='gp', kernel_params=dict(), kern
         list of targets
     n_points: int, optional (default: `100`)
         number of points to extrapolate
+    dpt_range: list(int), optional (default `[None, None]`)
+        initial and final start values for range
     mode: str, optional (default: `'gp'`)
         which regressor to use, available (`'gp'`: Gaussian Process, `'krr'`: Kernel Ridge Regression)
     kernel_params: dict, optional (default: `dict()`)
@@ -202,7 +204,8 @@ def _smooth_expression(x, y, n_points=100, mode='gp', kernel_params=dict(), kern
                    dp=DotProduct,
                    pw=PairwiseKernel)
 
-    x_test = np.linspace(0, 1, n_points)[:, None]
+    minn, maxx = dpt_range
+    x_test = np.linspace(np.min(x) if minn is None else minn, np.max(x) if maxx is None else maxx, n_points)[:, None]
 
     if mode == 'krr':
         gamma = opt_params.pop('gamma', None)
@@ -296,30 +299,30 @@ def _shift_scale(x_obs, x_theo, fit_intercept=False):
 def _create_velocity_figure(dataframe, color_key, title, color_mapper,
                             legend_loc='top_right', plot_width=None, plot_height=None):
     """
-        Helper function which create a figure with smoothed velocities, including
-        confidence intervals, if possible.
+    Helper function which create a figure with smoothed velocities, including
+    confidence intervals, if possible.
 
-        Params:
-        --------
-        dataframe: pandas.DataFrame
-            dataframe containing the velocity data
-        color_key: str
-            column in `dataframe` that is to be mapped to colors
-        title: str
-            title of the figure
-        color_mapper: bokeh.models.mappers.CategoricalColorMapper
-            transformation which assings a value from `dataframe[color_key]` to a color
-        legend_loc: str, default(`'top_right'`)
-            position of the legend
-        plot_width: int, optional (default: `None`)
-            width of the plot
-        plot_height: int, optional (default: `None`)
-            height of the plot
+    Params:
+    --------
+    dataframe: pandas.DataFrame
+        dataframe containing the velocity data
+    color_key: str
+        column in `dataframe` that is to be mapped to colors
+    title: str
+        title of the figure
+    color_mapper: bokeh.models.mappers.CategoricalColorMapper
+        transformation which assings a value from `dataframe[color_key]` to a color
+    legend_loc: str, default(`'top_right'`)
+        position of the legend
+    plot_width: int, optional (default: `None`)
+        width of the plot
+    plot_height: int, optional (default: `None`)
+        height of the plot
 
-        Returns:
-        --------
-        fig: bokeh.plotting.figure
-            figure containing the plot
+    Returns:
+    --------
+    fig: bokeh.plotting.figure
+        figure containing the plot
     """
     
     # these markers are nearly indistinguishble
@@ -328,7 +331,9 @@ def _create_velocity_figure(dataframe, color_key, title, color_mapper,
     _set_plot_wh(fig, plot_width, plot_height)
 
     for i, (marker, (path, df)) in enumerate(zip(markers, dataframe.iterrows())):
-        ds = dict(df)
+        ds = {'dpt': df['dpt'],
+              'expr': df['expr'],
+              f'{color_key}': df[color_key]}
         source = ColumnDataSource(ds)
         fig.scatter('dpt', 'expr', source=source, color={'field': color_key, 'transform': color_mapper},
                     marker=marker, size=10, legend=f'{path}', muted_alpha=0)
@@ -338,8 +343,11 @@ def _create_velocity_figure(dataframe, color_key, title, color_mapper,
         if legend_loc is not None:
             fig.legend.location = legend_loc
 
+        ds = dict(df[['x_test', 'x_mean', 'x_cov']])
+
         if ds.get('x_test') is not None:
             if ds.get('x_mean') is not None:
+                source = ColumnDataSource(ds)
                 fig.line('x_test', 'x_mean', source=source, muted_alpha=0, legend=path)
                 if all(map(lambda val: val is not None, ds.get('x_cov', [None]))):
                     x_mean = ds['x_mean']
@@ -662,6 +670,8 @@ def thresholding_hist(adata, key, categories, bases=['umap'], components=[1, 2],
 
 
 def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
+               n_points=100, show_zero_counts=True,
+               dpt_range=[None, None], use_raw=True,
                n_velocity_genes=5, length_scale=0.2,
                path_key='louvain', color_key='louvain',
                legend_loc='top_right', plot_width=None, plot_height=None,
@@ -683,6 +693,14 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
         smoothing the expression values
     exp_key: str, optional (default: `'X'`)
         key from adata.layers or just `'X'` to get expression values
+    n_points: int, optional (default: `100`)
+        how many points to use for the smoothing
+    dpt_range: list(int), optional (default `[None, None]`)
+        initial and final start values for range, `None` corresponds to min/max
+    use_raw: bool, optional (default: `True`)
+        whether to use adata.raw to get the expression
+    show_zero_counts: bool, optional (default: `True`)
+        whether to show cells with zero counts
     n_velocity_genes: int, optional (default: `5`)
         number of genes to take from` adata.var['velocity_genes']`
     length_scale : float, optional (default `0.2`)
@@ -736,30 +754,44 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
         for path in paths:
             path_ix = np.in1d(adata.obs[path_key], path)
             ad = adata[path_ix].copy()
-            gene_exp = ad[:, gene].layers[exp_key] if exp_key != 'X' else ad.raw[:, gene].X
+
+            minn, maxx = dpt_range
+            minn = np.min(ad.obs['dpt_pseudotime']) if minn is None else minn
+            maxx= np.max(ad.obs['dpt_pseudotime']) if maxx is None else maxx
+
+            # wish I could get rid of this copy
+            ad = ad[(ad.obs['dpt_pseudotime'] >= minn) & (ad.obs['dpt_pseudotime'] <= maxx)]
+            # ad = ad[ad.obs['dpt_pseudotime'] <= maxx]
+
+            gene_exp = ad[:, gene].layers[exp_key] if exp_key != 'X' else (ad.raw if use_raw else ad)[:, gene].X
 
             # exclude dropouts
             ix = (gene_exp > 0)
+            indexer = slice(None) if show_zero_counts else ix
+            # just use for sanity check with asserts
+            rev_indexer = ix if show_zero_counts else slice(None)
+
             dpt = ad.obs['dpt_pseudotime']
 
             if issparse(gene_exp):
                 gene_exp = gene_exp.A
 
-            gene_exp = gene_exp.flatten()
+            gene_exp = np.squeeze(gene_exp[indexer, None])
             data['expr'].append(gene_exp)
 
             # compute smoothed values from expression
-            data['dpt'].append(list(dpt))
-            data[color_key].append(list(map(str, ad.obs[color_key])))
+            data['dpt'].append(np.squeeze(dpt[indexer, None]))
+            data[color_key].append(np.array(list(map(str, ad[indexer].obs[color_key]))))
 
-            assert all(gene_exp[ix] > 0)
+            assert all(gene_exp[rev_indexer] > 0)
 
-            if len(gene_exp[ix]) == 0:
+            if len(gene_exp[rev_indexer]) == 0:
                 print(f'All counts are 0 for `{gene}`')
                 continue
 
-            x_test, exp_mean, exp_cov = _smooth_expression(dpt[ix, None], gene_exp[ix], mode=mode,
-                n_points=len(dpt), kernel_params=dict(k=dict(length_scale=length_scale)), **kwargs)
+            x_test, exp_mean, exp_cov = _smooth_expression(np.expand_dims(dpt[ix], -1), gene_exp[ix if show_zero_counts else slice(None)], mode=mode,
+                                                           dpt_range=dpt_range, n_points=n_points, kernel_params=dict(k=dict(length_scale=length_scale)),
+                                                           **kwargs)
                                                       
             data['x_test'].append(x_test)
             data['x_mean'].append(exp_mean)
@@ -1154,14 +1186,11 @@ def highlight_indices(adata, key, basis='diffmap', components=[1, 2], cell_keys=
 
     # TODO: use mapper
     mapper = _create_mapper(adata, key)
-    # palette = adata.uns.get(f'{key}_colors', inferno(len(df[key].unique())))
-    # palette = _to_hex(palette)
 
     p = figure(title=f'{key}', tools=tools)
     _set_plot_wh(p, plot_width, plot_height)
 
     renderers = []
-    # for c, color in zip(key_col.cat.categories, palette):
     if adata.obs[key].dtype.name == 'category':
         key_col = adata.obs[key]
         for c in key_col.cat.categories:
