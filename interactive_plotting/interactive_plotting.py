@@ -16,6 +16,8 @@ import scanpy.api as sc
 import matplotlib.cm as cm
 import matplotlib.colors as colors
 import matplotlib
+import bokeh
+
 
 from bokeh.plotting import figure, show
 from bokeh.models import ColumnDataSource, Slider, HoverTool, ColorBar, \
@@ -26,6 +28,9 @@ from bokeh.transform import linear_cmap, factor_mark, factor_cmap
 from bokeh.core.enums import MarkerType
 from bokeh.palettes import Set1, Set2, Set3, inferno 
 from bokeh.models.widgets.buttons import Button
+
+
+_bokeh_version = tuple(map(int, bokeh.__version__.split('.')))
 
 
 _inter_hist_js_code="""
@@ -240,6 +245,7 @@ def _smooth_expression(x, y, n_points=100, dpt_range=[None, None], mode='gp', ke
         model.fit(x, y)
 
         mean, cov = model.predict(x_test, return_cov=True)
+
         return x_test, mean, cov
 
     raise ValueError(f'Uknown type: `{type}`.')
@@ -512,12 +518,12 @@ def interactive_hist(adata, keys=['n_counts', 'n_genes'],
 
         cols.append(column(slider, button, fig))
 
-    # transform list of pairs of figures and sliders into list of lists, where
-    # each sublist has length <= 2
-    # note that bokeh does not like np.arrays
-    grid = list(map(list, np.array_split(cols, np.ceil(len(cols) / 2))))
-
-    show(layout(children=grid, sizing_mode='fixed', ncols=2))
+    if _bokeh_version > (1, 0, 4):
+        from bokeh.layouts import grid
+        show(grid(children=cols, ncols=2))
+    else:
+        cols = list(map(list, np.array_split(cols, np.ceil(len(cols) / 2))))
+        show(layout(children=cols, sizing_mode='fixed', ncols=2))
 
 
 def thresholding_hist(adata, key, categories, bases=['umap'], components=[1, 2],
