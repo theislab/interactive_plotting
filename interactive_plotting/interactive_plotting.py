@@ -1,9 +1,13 @@
+#!/usr/bin/env python3
+
+from sklearn.neighbors import NearestNeighbors
 from sklearn.gaussian_process.kernels import *
 from sklearn import neighbors
 from scipy.sparse import issparse
 from scipy.spatial import distance_matrix, ConvexHull
 
 from functools import reduce
+# from collections.abc import Iterable
 from collections import defaultdict
 from itertools import product
 
@@ -95,6 +99,63 @@ def _set_plot_wh(fig, w, h):
         fig.plot_width = w
     if h is not None:
         fig.plot_height = h
+
+
+# based on:
+# https://github.com/velocyto-team/velocyto-notebooks/blob/master/python/DentateGyrus.ipynb
+def _sample_unif(adata, steps, basis='umap'):
+    if not isinstance(steps, (tuple, list)):
+        steps = (steps, steps)
+
+    embedding = adata.obsm[f'X_{basis}'][:, :2]
+    grs = []
+
+    for i in range(embedding.shape[1]):
+        m, M = np.min(embedding[:, i]), np.max(embedding[:, i])
+        m = m - 0.025 * np.abs(M - m)
+        M = M + 0.025 * np.abs(M - m)
+        gr = np.linspace(m, M, num=steps[i])
+        grs.append(gr)
+
+    meshes_tuple = np.meshgrid(*grs)
+    gridpoints_coordinates = np.vstack([i.flat for i in meshes_tuple]).T
+
+    nn = NearestNeighbors()
+    nn.fit(embedding)
+    dist, ixs = nn.kneighbors(gridpoints_coordinates, 1)
+
+    min_dist = np.sqrt((meshes_tuple[0][0, 0] - meshes_tuple[0][0, 1]) ** 2 +
+                             (meshes_tuple[1][0, 0] - meshes_tuple[1][1, 0]) ** 2) / 2
+
+    ixs = ixs[dist < min_dist]
+    ixs = np.unique(ixs)
+
+    return  adata[ixs].copy()
+
+
+def _sample_density(adata, size, basis='umap', key=None):
+    if size >= adata.n_obs:
+        return adata
+
+    if key is not None:
+        density_key = f'{basis}_density_{key}'
+        assert density_key in adata.obs_keys(), f'{density_key} not found in `adata.obs_keys()`. Did you run `sc.tl.embedding_density` with `groups="{key}"`?'
+        # normalize, flatten the index
+        tmp = pd.DataFrame(adata.obs.groupby(key).apply(lambda df: np.exp(df[density_key]) / np.sum(np.exp(df[density_key])))).reset_index()
+        # cleanup before join
+        tmp.index = tmp['index']
+        del tmp['index']
+        tmp.rename(colums={density_key: 'prob_density',
+                           key: f'{key}_test'}, inplace=True)
+        tmp = adata.obs.join(tmp, on='index')
+        assert all(tmp[key] == tmp[f'{key}_test']), 'something went terribly wrong when merging fataframes'
+    else:
+        tmp = pd.DataFrame(np.exp(adata.obs[f'{basis}_density']) / np.sum(np.exp(adata.obs[f'{basis}_density'])))
+        tmp.rename(columns={f'{basis}_density': 'prob_density'}, inplace=True)
+
+    ixs = np.random.choice(range(adata.n_obs), size=size, p=tmp['prob_density'], replace=False)
+
+    return adata[ixs].copy()
 
 
 def _create_mapper(adata, key):
@@ -762,6 +823,7 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
             ad = adata[path_ix].copy()
 
             minn, maxx = dpt_range
+            ad.obs['dpt_pseudotime'] = ad.obs['dpt_pseudotime'].replace(np.inf, 1)
             minn = np.min(ad.obs['dpt_pseudotime']) if minn is None else minn
             maxx= np.max(ad.obs['dpt_pseudotime']) if maxx is None else maxx
 
@@ -965,6 +1027,7 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_genes=10,
 
 
 def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
+             sampling=None, step_size=30, sample_size=500,
              distance=2, cutoff=True, highlight_only=None, palette=None,
              show_legend=False, legend_loc='top_right', plot_width=None, plot_height=None):
     """
@@ -985,6 +1048,14 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
         only the first plot is hoverable
     components: list(int); list(list(int)), optional (default: `[1, 2]`)
         list of components for each basis
+    sampling: str, optional (default: `None`)
+        sampling strategy to use when there are too many cells
+        possible values are: `"density"`, `"uniform"`, `None`
+    step_size: int; tuple(int), optional (default: `30`)
+        number of steps in each direction when using `sampling="uniform"`
+    sample_size: int, optional (default: `500`)
+        number of cells to sample based on their density in the respective embedding
+        when using `sampling="density"`; should be < `1000`
     distance: int; str, optional (default: `2`)
         for integers, use p-norm,
         for strings, only `'dpt'` is available
@@ -1009,6 +1080,13 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
     --------
     None
     """
+
+    if sampling == 'uniform':
+        adata = _sample_unif(adata, step_size, bases[0])
+    elif sampling == 'density':
+        adata = _sample_density(adata, sample_size, bases[0])
+    elif sampling is not None:
+        raise ValueError(f'Unknown sampling strategy: `{sampling}`.')
 
     palette = cm.RdYlBu if palette is None else palette
     if isinstance(palette, matplotlib.colors.Colormap):
@@ -1043,8 +1121,7 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
         for i in range(ad_tmp.n_obs):
             ad_tmp.uns['iroot'] = i
             sc.tl.dpt(ad_tmp)
-            dmat.append(list(ad_tmp.obs['dpt_pseudotime']))
-
+            dmat.append(list(ad_tmp.obs['dpt_pseudotime'].replace([np.nan, np.inf], [0, 1])))
 
     dmat = pd.DataFrame(dmat, columns=list(map(str, range(adata.n_obs))))
     df = pd.concat([pd.DataFrame(adata.obsm[f'X_{basis}'][:, comp - (basis != 'diffmap')], columns=[f'x{i}', f'y{i}'])
