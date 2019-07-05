@@ -25,12 +25,12 @@ import bokeh
 
 from bokeh.plotting import figure, show
 from bokeh.models import ColumnDataSource, Slider, HoverTool, ColorBar, \
-        Patches, Legend, CustomJS, TextInput, LabelSet
-from bokeh.models.mappers import CategoricalColorMapper
+        Patches, Legend, CustomJS, TextInput, LabelSet, Select
+from bokeh.models.mappers import CategoricalColorMapper, LinearColorMapper 
 from bokeh.layouts import layout, column, row, GridSpec
 from bokeh.transform import linear_cmap, factor_mark, factor_cmap
 from bokeh.core.enums import MarkerType
-from bokeh.palettes import Set1, Set2, Set3, inferno 
+from bokeh.palettes import Set1, Set2, Set3, inferno, viridis
 from bokeh.models.widgets.buttons import Button
 
 
@@ -76,6 +76,27 @@ _inter_hist_js_code="""
 """
 
 
+def _inter_color_code(*colors):
+    assert len(colors) > 0, 'Doesn\'t make sense using no colors.'
+    color_code = '\n'.join((f'renderers[i].glyph.{c} = {{field: cb_obj.value, transform: transform}};'
+                            for c in colors))
+    return f"""
+            var transform = cmaps[cb_obj.value]['transform'];
+            var low = Math.min.apply(Math, source.data[cb_obj.value]);
+            var high = Math.max.apply(Math, source.data[cb_obj.value]);
+
+            for (var i = 0; i < renderers.length; i++) {{
+                {color_code}
+            }}
+
+            color_bar.color_mapper.low = low;
+            color_bar.color_mapper.high = high;
+            color_bar.color_mapper.palette = transform.palette;
+
+            source.change.emit();
+            """
+
+
 def _to_hex(palette):
     """
     Converts matplotlib color array to hex strings
@@ -88,7 +109,7 @@ def _to_hex(palette):
         return palette
 
     minn = np.min(palette)
-    # normalize to 0..1
+    # normalize to [0, 1]
     palette = (palette - minn) / (np.max(palette) - minn)
 
     return [colors.to_hex(c) if colors.is_color_like(c) else c for c in palette]
@@ -167,16 +188,27 @@ def _create_mapper(adata, key):
         adata: AnnData
             annotated data object
         key: str
-            key in `adata.obs.obs_keys()`, for which we want the colors; if no colors for given
-            column are found in `adata.uns[key_colors]`, use `inferno` palette
+            key in `adata.obs.obs_keys()` or `adata.var_names`, for which we want the colors; if no colors for given
+            column are found in `adata.uns[key_colors]`, use `viridis` palette
 
     Returns
     --------
         mapper: bokeh.models.mappers.CategoricalColorMapper
             mapper which maps valuems from `adata.obs[key]` to colors
     """
+    if not key in adata.obs_keys():
+        assert key in adata.var_names,  f'`{key}` not found in `adata.obs_keys()` or `adata.var_names`'
+        ix = np.where(adata.var_names == key)[0][0]
+        vals = list(adata.X[:, ix])
+        palette = cm.get_cmap('viridis', adata.n_obs)
+
+        mapper = dict(zip(vals, range(len(vals))))
+        palette = _to_hex(palette([mapper[v] for v in vals]))
+
+        return LinearColorMapper(palette=palette, low=np.min(vals), high=np.max(vals))
+
     is_categorical = adata.obs[key].dtype.name == 'category'
-    default_palette = cm.get_cmap('inferno', adata.n_obs if not is_categorical else len(adata.obs[key].unique()))
+    default_palette = cm.get_cmap('viridis', adata.n_obs if not is_categorical else len(adata.obs[key].unique()))
     palette = adata.uns.get(f'{key}_colors', default_palette)
 
     if palette is default_palette:
@@ -185,12 +217,14 @@ def _create_mapper(adata, key):
         palette = palette([mapper[v] for v in vals])
 
     palette = _to_hex(palette)
-    key_col = adata.obs[key].astype('category') if not is_categorical else adata.obs[key]
 
-    return CategoricalColorMapper(palette=palette, factors=list(map(str, key_col.cat.categories)))
+    if is_categorical:
+        return CategoricalColorMapper(palette=palette, factors=list(map(str, adata.obs[key].cat.categories)))
+
+    return LinearColorMapper(palette=palette, low=np.min(adata.obs[key]), high=np.max(adata.obs[key]))
 
 
-def _smooth_expression(x, y, n_points=100, dpt_range=[None, None], mode='gp', kernel_params=dict(), kernel_default_params=dict(),
+def _smooth_expression(x, y, n_points=100, time_span=[None, None], mode='gp', kernel_params=dict(), kernel_default_params=dict(),
                       kernel_expr=None, default=False, verbose=False, **opt_params):
     """Smooth out the expression of given values.
 
@@ -202,7 +236,7 @@ def _smooth_expression(x, y, n_points=100, dpt_range=[None, None], mode='gp', ke
         list of targets
     n_points: int, optional (default: `100`)
         number of points to extrapolate
-    dpt_range: list(int), optional (default `[None, None]`)
+    time_span: list(int), optional (default `[None, None]`)
         initial and final start values for range
     mode: str, optional (default: `'gp'`)
         which regressor to use, available (`'gp'`: Gaussian Process, `'krr'`: Kernel Ridge Regression)
@@ -270,7 +304,7 @@ def _smooth_expression(x, y, n_points=100, dpt_range=[None, None], mode='gp', ke
                    dp=DotProduct,
                    pw=PairwiseKernel)
 
-    minn, maxx = dpt_range
+    minn, maxx = time_span
     x_test = np.linspace(np.min(x) if minn is None else minn, np.max(x) if maxx is None else maxx, n_points)[:, None]
 
     if mode == 'krr':
@@ -363,8 +397,8 @@ def _shift_scale(x_obs, x_theo, fit_intercept=False):
     return reg.coef_, reg.intercept_
 
 
-def _create_velocity_figure(dataframe, color_key, title, color_mapper,
-                            legend_loc='top_right', plot_width=None, plot_height=None):
+def _create_gt_fig(adatas, dataframe, color_key, title, color_mapper, show_cont_annot=False,
+                            use_raw=True, genes=[], legend_loc='top_right', plot_width=None, plot_height=None):
     """
     Helper function which create a figure with smoothed velocities, including
     confidence intervals, if possible.
@@ -379,6 +413,14 @@ def _create_velocity_figure(dataframe, color_key, title, color_mapper,
         title of the figure
     color_mapper: bokeh.models.mappers.CategoricalColorMapper
         transformation which assings a value from `dataframe[color_key]` to a color
+    show_cont_annot: bool, optional (default: `False`)
+        show continuous annotations in `adata.obs`, if `color_key` is
+        itself a continuous variable
+    use_raw: bool, optional (default: `True`)
+        whether to use adata.raw to get the expression
+    genes: list, optional (default: `[]`)
+        list of possible genes to color in,
+        only works if `color_key` is continuous variable
     legend_loc: str, default(`'top_right'`)
         position of the legend
     plot_width: int, optional (default: `None`)
@@ -397,21 +439,31 @@ def _create_velocity_figure(dataframe, color_key, title, color_mapper,
     fig = figure(title=title)
     _set_plot_wh(fig, plot_width, plot_height)
 
-    for i, (marker, (path, df)) in enumerate(zip(markers, dataframe.iterrows())):
+    renderers, color_selects = [], []
+    for i, (adata, marker, (path, df)) in enumerate(zip(adatas, markers, dataframe.iterrows())):
         ds = {'dpt': df['dpt'],
               'expr': df['expr'],
               f'{color_key}': df[color_key]}
+        is_categorical = color_key in adata.obs_keys() and adata.obs[color_key].dtype.name == 'category'
+        if not is_categorical:
+            ds, mappers = _get_mappers(adata, ds, genes, use_raw=use_raw)
+
         source = ColumnDataSource(ds)
-        fig.scatter('dpt', 'expr', source=source, color={'field': color_key, 'transform': color_mapper},
-                    marker=marker, size=10, legend=f'{path}', muted_alpha=0)
+        renderers.append(fig.scatter('dpt', 'expr', source=source,
+                                     color={'field': color_key, 'transform': color_mapper if is_categorical else mappers[color_key]['transform']},
+                                     fill_color={'field': color_key, 'transform': color_mapper if is_categorical else mappers[color_key]['transform']},
+                                     line_color={'field': color_key, 'transform': color_mapper if is_categorical else mappers[color_key]['transform']},
+                                     marker=marker, size=10, legend=path, muted_alpha=0))
 
         fig.xaxis.axis_label = 'dpt'
         fig.yaxis.axis_label = 'expression'
         if legend_loc is not None:
             fig.legend.location = legend_loc
 
-        ds = dict(df[['x_test', 'x_mean', 'x_cov']])
+        if not is_categorical and show_cont_annot:
+            color_selects.append(_add_color_select(color_key, fig, [renderers[-1]], source, mappers, suffix=f' [{path}]'))
 
+        ds = dict(df[['x_test', 'x_mean', 'x_cov']])
         if ds.get('x_test') is not None:
             if ds.get('x_mean') is not None:
                 source = ColumnDataSource(ds)
@@ -428,10 +480,9 @@ def _create_velocity_figure(dataframe, color_key, title, color_mapper,
             if ds.get('x_grad') is not None:
                 fig.line('x_test', 'x_grad', source=source, muted_alpha=0)
 
-
     fig.legend.click_policy = 'mute'
 
-    return fig
+    return column(fig, *color_selects)
 
 
 def interactive_hist(adata, keys=['n_counts', 'n_genes'],
@@ -540,7 +591,6 @@ def interactive_hist(adata, keys=['n_counts', 'n_genes'],
 
             legend = ', '.join(': '.join(map(str, gv)) for gv in zip(groups, group_vs)) \
                     if groups is not None else 'all'
-            # create figure
             p = fig.quad(source=source, top='hist', bottom=0,
                          left='l_edges', right='r_edges',
                          fill_color=palette[j], legend=legend if legend_loc is not None else None,
@@ -737,8 +787,9 @@ def thresholding_hist(adata, key, categories, bases=['umap'], components=[1, 2],
 
 
 def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
-               n_points=100, show_zero_counts=True,
-               dpt_range=[None, None], use_raw=True,
+               separate_paths=False, show_cont_annot=False,
+               extra_genes=[], n_points=100, show_zero_counts=True,
+               time_span=[None, None], use_raw=True,
                n_velocity_genes=5, length_scale=0.2,
                path_key='louvain', color_key='louvain',
                legend_loc='top_right', plot_width=None, plot_height=None,
@@ -760,9 +811,17 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
         smoothing the expression values
     exp_key: str, optional (default: `'X'`)
         key from adata.layers or just `'X'` to get expression values
+    separate_paths: bool, optional (default: `False`)
+        whether to show each path for each gene in a separate plot
+    show_cont_annot: bool, optional (default: `False`)
+        show continuous annotations in `adata.obs`,
+        only works if `color_key` is continuous variable
+    extra_genes: list(str), optional (default: `[]`)
+        list of possible genes to color in,
+        only works if `color_key` is continuous variable
     n_points: int, optional (default: `100`)
         how many points to use for the smoothing
-    dpt_range: list(int), optional (default `[None, None]`)
+    time_span: list(int), optional (default `[None, None]`)
         initial and final start values for range, `None` corresponds to min/max
     use_raw: bool, optional (default: `True`)
         whether to use adata.raw to get the expression
@@ -805,31 +864,29 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
     if genes is None:
         genes = adata[:, adata.var['velocity_genes']].var_names[:n_velocity_genes]
 
-
     genes_indicator = np.in1d(genes, adata.var_names) #[gene in adata.var_names for gene in genes]
     if not all(genes_indicator):
         genes_missing = np.array(genes)[np.invert(genes_indicator)]
         print(f'Could not find the following genes: `{genes_missing}`.')
         genes = list(np.array(genes)[genes_indicator])
 
-
     mapper = _create_mapper(adata, color_key)
-    figs = []
+    figs, adatas = [], []
 
     for gene in genes:
         data = defaultdict(list)
+        row_figs = []
         for path in paths:
             path_ix = np.in1d(adata.obs[path_key], path)
             ad = adata[path_ix].copy()
 
-            minn, maxx = dpt_range
+            minn, maxx = time_span
             ad.obs['dpt_pseudotime'] = ad.obs['dpt_pseudotime'].replace(np.inf, 1)
             minn = np.min(ad.obs['dpt_pseudotime']) if minn is None else minn
             maxx= np.max(ad.obs['dpt_pseudotime']) if maxx is None else maxx
 
             # wish I could get rid of this copy
             ad = ad[(ad.obs['dpt_pseudotime'] >= minn) & (ad.obs['dpt_pseudotime'] <= maxx)]
-            # ad = ad[ad.obs['dpt_pseudotime'] <= maxx]
 
             gene_exp = ad[:, gene].layers[exp_key] if exp_key != 'X' else (ad.raw if use_raw else ad)[:, gene].X
 
@@ -849,27 +906,41 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
 
             # compute smoothed values from expression
             data['dpt'].append(np.squeeze(dpt[indexer, None]))
-            data[color_key].append(np.array(list(map(str, ad[indexer].obs[color_key]))))
+            data[color_key].append(np.array(ad[indexer].obs[color_key]))
 
             assert all(gene_exp[rev_indexer] > 0)
 
             if len(gene_exp[rev_indexer]) == 0:
-                print(f'All counts are 0 for `{gene}`')
+                print(f'All counts are 0 for: `{gene}`.')
                 continue
 
             x_test, exp_mean, exp_cov = _smooth_expression(np.expand_dims(dpt[ix], -1), gene_exp[ix if show_zero_counts else slice(None)], mode=mode,
-                                                           dpt_range=dpt_range, n_points=n_points, kernel_params=dict(k=dict(length_scale=length_scale)),
+                                                           time_span=time_span, n_points=n_points, kernel_params=dict(k=dict(length_scale=length_scale)),
                                                            **kwargs)
                                                       
             data['x_test'].append(x_test)
             data['x_mean'].append(exp_mean)
             data['x_cov'].append(exp_cov)
 
-        dataframe = pd.DataFrame(data, index=list(map(lambda path: ', '.join(map(str, path)), paths)))
+            # we need this for the _create mapper
+            adatas.append(ad[indexer])
+            
+            if separate_paths:
+                dataframe = pd.DataFrame(data, index=list(map(lambda path: ', '.join(map(str, path)), paths)))
+                row_figs.append(_create_gt_fig(adatas, dataframe, color_key, title=gene, color_mapper=mapper,
+                                               show_cont_annot=show_cont_annot, legend_loc=legend_loc, genes=extra_genes,
+                                               use_raw=use_raw, plot_width=plot_width, plot_height=plot_height))
+                adatas = []
+                data = defaultdict(list)
 
-        figs.append(_create_velocity_figure(dataframe, color_key, title=gene, color_mapper=mapper,
-                                            legend_loc=legend_loc, plot_width=plot_width,
-                                            plot_height=plot_height))
+        if separate_paths:
+            figs.append(row(row_figs))
+            row_figs = []
+        else:
+            dataframe = pd.DataFrame(data, index=list(map(lambda path: ', '.join(map(str, path)), paths)))
+            figs.append(_create_gt_fig(adatas, dataframe, color_key, title=gene, color_mapper=mapper,
+                                       show_cont_annot=show_cont_annot, legend_loc=legend_loc, genes=extra_genes,
+                                       use_raw=use_raw, plot_width=plot_width, plot_height=plot_height))
 
     show(column(*figs))
 
@@ -890,8 +961,7 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_genes=10,
     components: list(int), optional (default: `[1, 2]`)
         components of the basis
     n_top_genes: int, optional (default: `10`)
-        number of differentially expressed genes
-        to display
+        number of differentially expressed genes to display
     de_keys: list(str); str, optional (default: `'names, scores, pvals_ads, logfoldchanges'`)
         list or comma-seperated values of keys in `adata.uns['rank_genes_groups'].keys()`
         to be displayed for each cluster
@@ -1066,7 +1136,7 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
         key in `adata.obs_keys()`, which makes highlighting
         work only on clusters specified by this parameter
     palette: matplotlib.colors.Colormap; list(str), optional (default: `None`)
-        colormap to use, if None, use Inferno 
+        colormap to use, if None, use plt.cm.RdYlBu 
     show_legend: bool, optional (default: `False`)
         display the legend also in the linked plot
     legend_loc: str, optional (default `'top_right'`)
@@ -1148,6 +1218,7 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
                               hover_color='black', size=8, line_width=8, line_alpha=0)
         if show_legend and legend_loc is not None:
             fig.legend.location = legend_loc
+
         figs.append(fig)
         renderers.append(scatter)
     
@@ -1204,9 +1275,9 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
     show(column(slider, row(*static_figs), row(*figs)))
 
 
-def highlight_indices(adata, key, basis='diffmap', components=[1, 2], cell_keys='',
-                     legend_loc='top_right', plot_width=None, plot_height=None,
-                     tools='pan, reset, wheel_zoom, save'):
+def highlight_indices(adata, key, basis='diffmap', components=[1, 2],
+                      cell_keys='', genes=[], use_raw=True, legend_loc='top_right',
+                      plot_width=None, plot_height=None, tools='pan, reset, wheel_zoom, save'):
     """
     Plot cell indices. Useful when trying to set adata.uns['iroot'].
 
@@ -1218,10 +1289,15 @@ def highlight_indices(adata, key, basis='diffmap', components=[1, 2], cell_keys=
         key in `adata.obs_keys()` to color
     basis: str, optional (default: `'diffmap'`)
         basis to use
-    cell_keys: str, list(str), optional (default: `''`)
-        keys to display from `adata.obs_keys()` when hovering over cell
     components: list[int], optional (default: `[1, 2]`)
         which components of the basis to use
+    cell_keys: str, list(str), optional (default: `''`)
+        keys to display from `adata.obs_keys()` when hovering over cell
+    genes: list, optional (default: `[]`)
+        list of possible genes to color in,
+        only works if `key` is continuous variable
+    use_raw: bool, optional (default: `True`)
+        whether to use adata.raw to get the expression
     legend_loc: str, optional (default `'top_right'`)
         location of the legend
     tools: str, optional (default: `'pan, reset, wheel_zoom, save'`)
@@ -1258,7 +1334,7 @@ def highlight_indices(adata, key, basis='diffmap', components=[1, 2], cell_keys=
         df[k] = list(map(str, adata.obs[k]))
 
     df['index'] = range(len(df))
-    df[key] = list(map(str, adata.obs[key]))
+    df[key] = list(map(lambda c: c, adata.obs[key]))
 
     if hasattr(adata, 'obs_names'):
         cell_keys.insert(0, 'name')
@@ -1267,28 +1343,36 @@ def highlight_indices(adata, key, basis='diffmap', components=[1, 2], cell_keys=
     if 'index' not in cell_keys:
         cell_keys.insert(0, 'index')
 
-    # TODO: use mapper
-    mapper = _create_mapper(adata, key)
-
     p = figure(title=f'{key}', tools=tools)
     _set_plot_wh(p, plot_width, plot_height)
 
     renderers = []
+    color_select = None
     if adata.obs[key].dtype.name == 'category':
+        mapper = _create_mapper(adata, key)
+
         key_col = adata.obs[key]
         for c in key_col.cat.categories:
             data = ColumnDataSource(df[df[key] == c])
-            renderers.append([p.scatter(x='x', y='y', size=10, color={'field': key, 'transform': mapper}, source=data, muted_alpha=0)])
+            renderers.append(p.scatter(x='x', y='y', size=10, color={'field': key, 'transform': mapper}, source=data, muted_alpha=0))
 
         if legend_loc is not None:
-            legend = Legend(items=list(zip(map(str, key_col.cat.categories), renderers)), location=legend_loc, click_policy='mute')
+            legend = Legend(items=list(zip(map(str, key_col.cat.categories), ([r] for r in renderers))), location=legend_loc, click_policy='mute')
             p.add_layout(legend)
             p.legend.location = legend_loc
-    else:
-        data = ColumnDataSource(df)
-        renderers.append([p.scatter(x='x', y='y', color={'field': key, 'transform': mapper}, size=10, source=data, muted_alpha=0)])
 
-    hover_cell = HoverTool(renderers=list(np.ravel(renderers)), tooltips=[(f'{k}', f'@{k}') for k in cell_keys])
+    else:
+        df, mappers = _get_mappers(adata, df, genes, use_raw=use_raw)
+
+        data = ColumnDataSource(df)
+        renderers.append(p.scatter(x='x', y='y',
+                                   fill_color={'field': key, 'transform': mappers[key]['transform']},
+                                   line_color={'field': key, 'transform': mappers[key]['transform']},
+                                   size=10, source=data, muted_alpha=0))
+
+        color_select = _add_color_select(key, p, renderers, data, mappers)
+
+    hover_cell = HoverTool(renderers=renderers, tooltips=[(f'{k}', f'@{k}') for k in cell_keys])
 
     p.xaxis.axis_label = f'{basis}_{components[0]}'
     p.yaxis.axis_label = f'{basis}_{components[1]}'
@@ -1305,4 +1389,35 @@ def highlight_indices(adata, key, basis='diffmap', components=[1, 2], cell_keys=
     button = Button(label='Toggle Indices', button_type='primary')
     button.callback = CustomJS(args=dict(l=labels), code='l.visible = !l.visible;')
 
-    show(column(button, p))
+    show(column(button, p, color_select) if color_select is not None else column(button, p))
+
+
+def _get_mappers(adata, df, genes=[], use_raw=True, sort=True):
+    if sort:
+        genes = sorted(genes)
+
+    mappers = {c:{'field': c, 'transform': _create_mapper(adata, c)}
+               for c in (sorted if sort else list)(filter(lambda c: adata.obs[c].dtype.name != 'category', adata.obs.columns)) + genes}
+
+    # assume all columns in .obs are numbers
+    for k in filter(lambda k: k not in genes, mappers.keys()):
+        df[k] = list(adata.obs[k].astype(float))
+
+    indices, = np.where(np.in1d(adata.var_names, genes))
+    for ix in indices:
+        df[adata.var_names[ix]] = (adata.raw if use_raw else adata).X[:, ix]
+
+    return df, mappers
+
+
+def _add_color_select(key, fig, renderers, source, mappers, colors=['color', 'fill_color', 'line_color'],
+                      color_bar_pos='right', suffix=''):
+    color_bar = ColorBar(color_mapper=mappers[key]['transform'], width=10, location=(0, 0))
+    fig.add_layout(color_bar, color_bar_pos)
+
+    code = _inter_color_code(*colors)
+    callback= CustomJS(args=dict(renderers=renderers, source=source, color_bar=color_bar, cmaps=mappers),
+                       code=code)
+
+    return Select(title=f'Select variable to color{suffix}:', value=key,
+                  options=list(mappers.keys()), callback=callback)
