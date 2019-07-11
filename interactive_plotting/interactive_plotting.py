@@ -888,7 +888,7 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
             minn, maxx = time_span
             ad.obs['dpt_pseudotime'] = ad.obs['dpt_pseudotime'].replace(np.inf, 1)
             minn = np.min(ad.obs['dpt_pseudotime']) if minn is None else minn
-            maxx= np.max(ad.obs['dpt_pseudotime']) if maxx is None else maxx
+            maxx = np.max(ad.obs['dpt_pseudotime']) if maxx is None else maxx
 
             # wish I could get rid of this copy
             ad = ad[(ad.obs['dpt_pseudotime'] >= minn) & (ad.obs['dpt_pseudotime'] <= maxx)]
@@ -908,7 +908,7 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
 
             gene_exp = np.squeeze(gene_exp[indexer, None])
             data['expr'].append(gene_exp)
-            y_lim_min, y_lim_max = np.min(y_lim_min, np.min(gene_exp)), np.max(y_lim_max, np.max(gene_exp))
+            y_lim_min, y_lim_max = min(y_lim_min, np.min(gene_exp)), max(y_lim_max, np.max(gene_exp))
 
             # compute smoothed values from expression
             data['dpt'].append(np.squeeze(dpt[indexer, None]))
