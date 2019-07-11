@@ -25,7 +25,8 @@ import bokeh
 
 from bokeh.plotting import figure, show
 from bokeh.models import ColumnDataSource, Slider, HoverTool, ColorBar, \
-        Patches, Legend, CustomJS, TextInput, LabelSet, Select, Range1D
+        Patches, Legend, CustomJS, TextInput, LabelSet, Select 
+from bokeh.models.ranges import Range1d
 from bokeh.models.mappers import CategoricalColorMapper, LinearColorMapper 
 from bokeh.layouts import layout, column, row, GridSpec
 from bokeh.transform import linear_cmap, factor_mark, factor_cmap
