@@ -926,7 +926,7 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
             adatas.append(ad[indexer])
             
             if separate_paths:
-                dataframe = pd.DataFrame(data, index=list(map(lambda path: ', '.join(map(str, path)), paths)))
+                dataframe = pd.DataFrame(data, index=list(map(lambda path: ', '.join(map(str, path)), [path])))
                 row_figs.append(_create_gt_fig(adatas, dataframe, color_key, title=gene, color_mapper=mapper,
                                                show_cont_annot=show_cont_annot, legend_loc=legend_loc, genes=extra_genes,
                                                use_raw=use_raw, plot_width=plot_width, plot_height=plot_height))
