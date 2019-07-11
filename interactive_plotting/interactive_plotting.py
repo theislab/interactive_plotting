@@ -941,7 +941,8 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
 
         if separate_paths:
             if share_y:
-                for fig in row_figs:
+                # first child is the figure
+                for fig in map(lambda c: c.children[0], row_figs):
                     fig.y_range = Range1d(y_lim_min, y_lim_max)
 
             figs.append(row(row_figs))
