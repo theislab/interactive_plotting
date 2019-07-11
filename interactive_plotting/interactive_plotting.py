@@ -25,7 +25,7 @@ import bokeh
 
 from bokeh.plotting import figure, show
 from bokeh.models import ColumnDataSource, Slider, HoverTool, ColorBar, \
-        Patches, Legend, CustomJS, TextInput, LabelSet, Select
+        Patches, Legend, CustomJS, TextInput, LabelSet, Select, Range1D
 from bokeh.models.mappers import CategoricalColorMapper, LinearColorMapper 
 from bokeh.layouts import layout, column, row, GridSpec
 from bokeh.transform import linear_cmap, factor_mark, factor_cmap
@@ -398,7 +398,8 @@ def _shift_scale(x_obs, x_theo, fit_intercept=False):
 
 
 def _create_gt_fig(adatas, dataframe, color_key, title, color_mapper, show_cont_annot=False,
-                            use_raw=True, genes=[], legend_loc='top_right', plot_width=None, plot_height=None):
+                   use_raw=True, genes=[], legend_loc='top_right',
+                   plot_width=None, plot_height=None)
     """
     Helper function which create a figure with smoothed velocities, including
     confidence intervals, if possible.
@@ -792,8 +793,8 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
                time_span=[None, None], use_raw=True,
                n_velocity_genes=5, length_scale=0.2,
                path_key='louvain', color_key='louvain',
-               legend_loc='top_right', plot_width=None, plot_height=None,
-               **kwargs):
+               share_y=True, legend_loc='top_right',
+               plot_width=None, plot_height=None, **kwargs):
     """
     Function which shows expression levels as well as velocity per gene as a function of DPT.
 
@@ -835,6 +836,8 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
         key in `adata.obs_keys()` where to look for groups specified in `paths` argument
     color_key: str, optional (default: `'louvain'`)
         key in `adata.obs_keys()` which is color in plot
+    share_y: bool, optional (default: `True`)
+        whether to share y-axis when plotting paths separately
     legend_loc: str, default(`'top_right'`)
         position of the legend
     plot_width: int, optional (default: `None`)
@@ -876,6 +879,7 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
     for gene in genes:
         data = defaultdict(list)
         row_figs = []
+        y_lim_min, y_lim_max = np.inf, -np.inf
         for path in paths:
             path_ix = np.in1d(adata.obs[path_key], path)
             ad = adata[path_ix].copy()
@@ -903,6 +907,7 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
 
             gene_exp = np.squeeze(gene_exp[indexer, None])
             data['expr'].append(gene_exp)
+            y_lim_min, y_lim_max = np.min(y_lim_min, np.min(gene_exp)), np.max(y_lim_max, np.max(gene_exp))
 
             # compute smoothed values from expression
             data['dpt'].append(np.squeeze(dpt[indexer, None]))
@@ -934,6 +939,10 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
                 data = defaultdict(list)
 
         if separate_paths:
+            if share_y:
+                for f in row_figs:
+                    fig.y_range = Range1d(y_lim_min, y_lim_max)
+
             figs.append(row(row_figs))
             row_figs = []
         else:
