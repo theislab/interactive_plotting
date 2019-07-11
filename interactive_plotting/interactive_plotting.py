@@ -399,7 +399,7 @@ def _shift_scale(x_obs, x_theo, fit_intercept=False):
 
 def _create_gt_fig(adatas, dataframe, color_key, title, color_mapper, show_cont_annot=False,
                    use_raw=True, genes=[], legend_loc='top_right',
-                   plot_width=None, plot_height=None)
+                   plot_width=None, plot_height=None):
     """
     Helper function which create a figure with smoothed velocities, including
     confidence intervals, if possible.
