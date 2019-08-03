@@ -11,7 +11,7 @@ To install this package, do the following:
 ```bash
 git clone https://github.com/michalk8/interactive_plotting  
 cd interactive_plotting  
-pip install .
+pip install -e .
 ```
 
 ## Getting Started
