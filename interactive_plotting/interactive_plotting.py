@@ -226,7 +226,7 @@ def _create_mapper(adata, key):
 
 
 def _smooth_expression(x, y, n_points=100, time_span=[None, None], mode='gp', kernel_params=dict(), kernel_default_params=dict(),
-                      kernel_expr=None, default=False, verbose=False, **opt_params):
+                       kernel_expr=None, default=False, verbose=False, **opt_params):
     """Smooth out the expression of given values.
 
     Params
@@ -1161,6 +1161,7 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
     --------
     None
     """
+    assert key in adata.obs.keys(), f'`{key}` not found in `adata.obs`.'
 
     if sampling == 'uniform':
         adata = _sample_unif(adata, step_size, bases[0])
@@ -1191,7 +1192,10 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
 
     start_ix = str(adata.uns.get('iroot', 0))
     if distance != 'dpt':
-        dmat = distance_matrix(adata.X[:, gene_subset], adata.X[:, gene_subset], p=distance)
+        d = adata.X[:, gene_subset]
+        if issparse(d):
+            d = d.A
+        dmat = distance_matrix(d, d, p=distance)
     else:
         if not all(gene_subset):
             warnings.warn('`genes` is not None, are you sure this is what you want when using `dpt` distance?')
