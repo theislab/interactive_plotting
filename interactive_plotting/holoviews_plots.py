@@ -497,7 +497,7 @@ def dpt(adata, cluster_key, genes=None, bases=['diffmap'], use_holomap=False,
 
     emb = emb.opts(axiswise=False, framewise=True, height=plot_height, width=plot_width)
     expr = expr.opts(axiswise=True, framewise=True, height=plot_height, width=plot_width)
-    emb_d = emb_d.opts(axiswise=False, framewise=True, height=plot_height, width=plot_width)
+    emb_d = emb_d.opts(axiswise=True, framewise=True, height=plot_height, width=plot_width)
 
     if show_legend and legend is not None:
         emb_d = (emb_d * legend).opts(legend_position=legend_loc, show_legend=True)
