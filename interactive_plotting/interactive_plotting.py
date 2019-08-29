@@ -1190,7 +1190,6 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
     genes = adata.var_names if genes is None else genes 
     gene_subset = np.in1d(adata.var_names, genes)
 
-    start_ix = str(adata.uns.get('iroot', 0))
     if distance != 'dpt':
         d = adata.X[:, gene_subset]
         if issparse(d):
@@ -1215,6 +1214,8 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
     df['index'] = range(len(df))
     df['hl_key'] = list(adata.obs[highlight_only]) if highlight_only is not None else 0
     df[key] = list(map(str, adata.obs[key]))
+
+    start_ix = df.columns[2]
 
     ds = ColumnDataSource(df)
     mapper = linear_cmap(field_name='hl_color', palette=palette,
