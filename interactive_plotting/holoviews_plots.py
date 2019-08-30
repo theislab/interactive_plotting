@@ -70,15 +70,15 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obsm_ke
 
     if not iterable(obs_keys):
         obs_keys = [obs_keys]
-    obs_keys = skip_or_filter(adata, obs_keys, adata.obs.keys(), dtype=float,
-                               where='obs', skip=skip)
+    obs_keys = skip_or_filter(adata, obs_keys, adata.obs.keys(), dtype=is_numeric,
+                              where='obs', skip=skip)
 
     if not iterable(obsm_keys):
         obsm_keys = [obsm_keys]
 
     ignore_after = OBSM_SEP if any((OBSM_SEP in obs_key for obs_key in obsm_keys)) else None
     obsm_keys = skip_or_filter(adata, obsm_keys, adata.obsm.keys(), where='obsm',
-                                dtype=float, skip=skip, ignore_after=ignore_after)
+                               dtype=is_numeric, skip=skip, ignore_after=ignore_after)
 
     if genes is None:
         genes = adata.var_names
@@ -228,14 +228,14 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
     if not iterable(obs_keys):
         obs_keys = [obs_keys]
     obs_keys = skip_or_filter(adata, obs_keys, adata.obs.keys(),
-                               dtype='category', where='obs', skip=skip)
+                              dtype='category', where='obs', skip=skip)
 
     if not iterable(obsm_keys):
         obsm_keys = [obsm_keys]
 
     ignore_after = ':' if any((':' in obs_key for obs_key in obsm_keys)) else None
     obsm_keys = skip_or_filter(adata, obsm_keys, adata.obsm.keys(), where='obsm',
-                                dtype='category', skip=skip, ignore_after=ignore_after)
+                               dtype='category', skip=skip, ignore_after=ignore_after)
 
     if sort:
         if any(obs_keys[i] > obs_keys[i + 1] for i in range(len(obs_keys) - 1)):

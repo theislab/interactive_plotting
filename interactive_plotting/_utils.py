@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
+from functools import wraps
+from collections import Iterable
+from inspect import signature
+
 import numpy as np
 import warnings
 import panel as pn
-
-from functools import wraps
-from collections import Iterable
 
 
 NO_SUBSAMPLE = (None, 'none')
@@ -52,7 +53,22 @@ def istype(obj):
         all the element of the tuple is of class `type`
     '''
 
-    return isinstance(obj, type) or (isinstance(obj, tuple) and all(map(lambda o:, isinstance(o, type), obj))
+    return isinstance(obj, type) or (isinstance(obj, tuple) and all(map(lambda o: isinstance(o, type), obj)))
+
+def is_numeric(obj):
+    '''
+    Params
+    obj: Object
+        Python object
+
+    --------
+    Returns
+    is_numeric: Bool
+        `True` if the object is numeric, else `False`
+    --------
+    '''
+    return all(hasattr(obj, attr)
+               for attr in ('__add__', '__sub__', '__mul__', '__truediv__', '__pow__'))
 
 
 def is_categorical(obj):
@@ -110,7 +126,7 @@ def skip_or_filter(adata, needles, haystack, where='', dtype=None,
         collection to search, e.g. `adata.obs.keys()`
     where: Str, optional, default (`''`)
         attribute of `anndata.AnnData` where to look, e. g. `'obsm'`
-    dtype: Union[List[Type], Type]
+    dtype: Union[Callable, Type]
         expected datatype of the needles
     skip: Bool, optional (default: `False`)
         whether to skip the needles which do not have
@@ -131,10 +147,9 @@ def skip_or_filter(adata, needles, haystack, where='', dtype=None,
     '''
 
     needles_f = map(lambda n: n[:n.find(ignore_after)], needles) if ignore_after is not None else needles
-    dtypes = dtypes if iterable(dtype) else [dtype] * len(needles_f)
     res = []
 
-    for dtype, n, nf in zip(dtypes, needles, needles_f):
+    for n, nf in zip(needles, needles_f):
         if nf not in haystack:
             msg = f'`{nf}` not found in `adata.{where}.keys()`.'
             if not skip:
@@ -143,7 +158,7 @@ def skip_or_filter(adata, needles, haystack, where='', dtype=None,
             continue
 
         col = getattr(adata, where)[nf]
-        val = col[0]
+        val = col.iloc[0]
         if n != nf:
             assert where == 'obsm', f'Indexing is only supported for `adata.obsm`, found {nf} in adata.`{where}`.'
             _, ix = n.split(ignore_after)
@@ -151,9 +166,14 @@ def skip_or_filter(adata, needles, haystack, where='', dtype=None,
             val = val[int(ix)]
 
         msg = None
-        if isinstance(dtype, type):
+        is_tup = isinstance(dtype, tuple)
+        if isinstance(dtype, type) or is_tup:
             if not isinstance(val, dtype):
-                msg = f'Expected `{nf}` to be of type `{dtype.__name__}`, found  `{type(nf).__name__}`.'
+                types = dtype.__name__ if not is_tup else f"Union[{', '.join(map(lambda d: d.__name__, dtype))}]"
+                msg = f'Expected `{nf}` to be of type `{types}`, found  `{type(val).__name__}`.'
+        elif callable(dtype):
+            if not dtype(val):
+                msg = f'`{nf}` did not pass the type checking of `{callable.__name__}`.'
         else:
             assert isinstance(dtype, str)
             if not dtype == col.dtype.name:
@@ -174,8 +194,14 @@ def has_attributes(*args, **kwargs):
     '''
     Params
     --------
+    *args: variable length arguments
+        key to check in for 
+    **kwargs: keyword arguments
+        keys to check
 
     Returns
+    wrapped: callable
+        function, which does the checks at runtime
     --------
     '''
 
@@ -183,9 +209,13 @@ def has_attributes(*args, **kwargs):
         '''
         Params
         --------
+        fn: callable
+            function to wrap
 
         Returns
         --------
+        wrapped: callable
+            the wrapped function
         '''
 
         @wraps(fn)
@@ -244,8 +274,8 @@ def wrap_as_panel(fn):
     
     Returns
     --------
-    widget: pn.panel
-        the panel object
+    wrapper: callable
+        function which return object of type `pn.panel`
     '''
 
     @wraps(fn)
@@ -276,8 +306,8 @@ def wrap_as_col(fn):
     
     Returns
     --------
-    widget: pn.Column
-        the column object
+    wrapped: callable 
+        function which return object of type `pn.Column`
     '''
 
     @wraps(fn)
