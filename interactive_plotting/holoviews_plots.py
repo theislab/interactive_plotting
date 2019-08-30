@@ -389,7 +389,7 @@ def dpt(adata, cluster_key, genes=None, bases=['diffmap'], use_holomap=False,
                                  kdims=[x, y], vdims='pseudotime')
 
             return scatter.opts(title='Pseudotime',
-                                cmap=cmap, color='pseudotime',
+                                cmap=cont_cmap, color='pseudotime',
                                 colorbar=True,
                                 colorbar_opts={'width': 10},
                                 clim=minmax(pseudotime),
