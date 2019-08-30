@@ -197,24 +197,31 @@ def has_attributes(*args, **kwargs):
     *args: variable length arguments
         key to check in for 
     **kwargs: keyword arguments
-        keys to check
+        attributes to check, keys will be interpreted
+        as arguments in function signature to check
+        and values are lists annotated as follows:
+        `[<optional_dtype>, 'a:<attribute1>', '<key1>', '<key2>', 'a:<attribute2>', ...]`
+        using type `None` will result in no type checking
 
     Returns
-    wrapped: callable
+    --------
+    wrapped: Callable
         function, which does the checks at runtime
     --------
     '''
 
     def inner(fn):
         '''
+        Binds the arguments of the function and checks the types.
+
         Params
         --------
-        fn: callable
+        fn: Callable
             function to wrap
 
         Returns
         --------
-        wrapped: callable
+        wrapped: Callable
             the wrapped function
         '''
 
@@ -246,6 +253,7 @@ def has_attributes(*args, **kwargs):
                             else:
                                 assert obj is not None
                                 obj = obj[val]
+
                         if typp is not None:
                             assert isinstance(obj, typp)
                 else:
@@ -269,12 +277,12 @@ def wrap_as_panel(fn):
 
     Params
     --------
-    fn: callable
+    fn: Callable
         funtion that returns a plot, such as `scatter`
     
     Returns
     --------
-    wrapper: callable
+    wrapper: Callable
         function which return object of type `pn.panel`
     '''
 
@@ -301,12 +309,12 @@ def wrap_as_col(fn):
 
     Params
     --------
-    fn: callable
+    fn: Callable
         funtion that returns a plot, such as `dpt`
     
     Returns
     --------
-    wrapped: callable 
+    wrapped: Callable 
         function which return object of type `pn.Column`
     '''
 
