@@ -23,6 +23,13 @@ import datashader as ds
 def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
             obs_keys=[], skip=True, subsample='datashade', keep_frac=0.5, use_holomap=False,
             sort=True, seed=42, cmap=Viridis256, cols=2, plot_height=400, plot_width=400):
+    '''
+    Params
+    --------
+
+    Returns
+    --------
+    '''
 
     def create_scatterplot(gene, *args, basis=None):
         ixs = np.where(bases == basis)[0][0]
@@ -173,6 +180,13 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
              obs_keys=[], skip=True, subsample='decimate', keep_frac=0.5, use_holomap=False,
              sort=True, seed=42, cmap=Sets1to3, cols=None, legend_loc='top_right', show_legend=True,
              plot_height=400, plot_width=400):
+    '''
+    Params
+    --------
+
+    Returns
+    --------
+    '''
 
     def create_legend(condition, basis):
         # slightly hacky solution to get the correct initial limits
@@ -339,6 +353,13 @@ def dpt(adata, cluster_key, genes=None, bases=['diffmap'], use_holomap=False,
         cat_cmap=Sets1to3, show_legend=True, cont_cmap=Viridis256, legend_loc='top_right',
         components=[1, 2], keep_frac=0.5, subsample='datashade', skip=True,
         sort=True, plot_height=400, plot_width=400, *args, **kwargs):
+    '''
+    Params
+    --------
+
+    Returns
+    --------
+    '''
 
     assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
     assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
