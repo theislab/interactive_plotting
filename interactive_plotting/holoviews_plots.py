@@ -62,7 +62,6 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obsm_ke
                             ylabel=f'{basisu}{comp[1]}')
 
     def _cs(basis, gene, *args):
-        # because of args ordering...
         return create_scatterplot(gene, *args, basis=basis)
 
     assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
@@ -233,7 +232,7 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
     if not iterable(obsm_keys):
         obsm_keys = [obsm_keys]
 
-    ignore_after = ':' if any((':' in obs_key for obs_key in obsm_keys)) else None
+    ignore_after = OBSM_SEP if any((OBSM_SEP in obs_key for obs_key in obsm_keys)) else None
     obsm_keys = skip_or_filter(adata, obsm_keys, adata.obsm.keys(), where='obsm',
                                dtype='category', skip=skip, ignore_after=ignore_after)
 
