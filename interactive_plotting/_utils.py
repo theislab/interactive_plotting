@@ -235,11 +235,17 @@ def has_attributes(*args, **kwargs):
 
 def wrap_as_panel(fn):
     '''
+    Wrap the widget inside a panel.
+
     Params
     --------
+    fn: callable
+        funtion that returns a plot, such as `scatter`
     
     Returns
     --------
+    widget: pn.panel
+        the panel object
     '''
 
     @wraps(fn)
@@ -252,6 +258,7 @@ def wrap_as_panel(fn):
         res = pn.panel(res)
         if reverse:
             res.reverse()
+
         return res
 
     return inner
@@ -259,11 +266,18 @@ def wrap_as_panel(fn):
 
 def wrap_as_col(fn):
     '''
+    Wrap the widget in a column, having it's
+    input in one row.
+
     Params
     --------
-
+    fn: callable
+        funtion that returns a plot, such as `dpt`
+    
     Returns
     --------
+    widget: pn.Column
+        the column object
     '''
 
     @wraps(fn)
