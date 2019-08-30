@@ -18,27 +18,123 @@ OBSM_SEP = ':'
 
 
 def iterable(obj):
+    '''
+    Checks whether the object is iterable non-string.
+    
+    Params
+    --------
+    obj: Object
+        Python object
+
+    Returns
+    --------
+    is_iterable: Bool
+        whether the object is not `str` and is
+        instance of class `Iterable`
+    '''
+
     return not isinstance(obj, str) and isinstance(obj, Iterable)
 
 
 def istype(obj):
-    return isinstance(obj, type) or (isinstance(obj, tuple) and isinstance(obj[0], type))
+    '''
+    Checks whether the object is of class `type`.
+
+    Params
+    --------
+    obj: Union[Object, Tuple]
+        Python object or a tuple
+
+    Returns
+    --------
+    is_type: Bool
+        `True` if the objects is instance of class `type` or
+        all the element of the tuple is of class `type`
+    '''
+
+    return isinstance(obj, type) or (isinstance(obj, tuple) and all(map(lambda o:, isinstance(o, type), obj))
 
 
 def is_categorical(obj):
+    '''
+    Is the object categorical?
+
+    Params
+    --------
+    obj: Python object
+        object that has attribute `'dtype'`,
+
+    Returns
+    --------
+    is_categorical: Bool
+        `True` if it's categorical else `False`
+    '''
+
     return obj.dtype.name == 'category'
 
 
 def minmax(component, is_sorted=False):
+    '''
+    Get the minimum and maximum value of an array.
+
+    Params
+    --------
+    component: Union[np.ndarray, List, Tuple]
+        1-D array
+    is_sorted: Bool, optional (default: `False`)
+        whether the component is already sorted,
+        if `True`, min and max are the first and last
+        elements respectively
+
+    Returns
+    --------
+    min_max: Tuple[Float, Float]
+        minimum and maximum values that are not NaN
+    '''
+
     return (np.nanmin(component), np.nanmax(component)) if not is_sorted else (component[0], component[-1])
 
 
 def skip_or_filter(adata, needles, haystack, where='', dtype=None,
                    skip=False, warn=True, ignore_after=None):
+    '''
+    Find all the needles in a given haystack.
+
+    Params
+    --------
+    adata: anndata.AnnData
+        anndata object
+    needles: List[Str]
+        keys to search for
+    haystack: Iterable
+        collection to search, e.g. `adata.obs.keys()`
+    where: Str, optional, default (`''`)
+        attribute of `anndata.AnnData` where to look, e. g. `'obsm'`
+    dtype: Union[List[Type], Type]
+        expected datatype of the needles
+    skip: Bool, optional (default: `False`)
+        whether to skip the needles which do not have
+        the expected `dtype`
+    warn: Bool
+        whether to issue a warning if `skip=True`
+    ignore_after: Str, optional (default: `None`)
+        token used for extracting the actual key name
+        from the needle of form `KeyTokenIndex`, neeeded when
+        `where='obsm'`, useful e.g. for extracting specific components
+
+    Returns
+    --------
+    found_needles: List[Str]
+        list of all the needles in haystack
+        if `skip=False`, will throw a `RuntimeError`
+        if the needle's type differs from `dtype`
+    '''
+
     needles_f = map(lambda n: n[:n.find(ignore_after)], needles) if ignore_after is not None else needles
+    dtypes = dtypes if iterable(dtype) else [dtype] * len(needles_f)
     res = []
 
-    for n, nf in zip(needles, needles_f):
+    for dtype, n, nf in zip(dtypes, needles, needles_f):
         if nf not in haystack:
             msg = f'`{nf}` not found in `adata.{where}.keys()`.'
             if not skip:
@@ -51,7 +147,7 @@ def skip_or_filter(adata, needles, haystack, where='', dtype=None,
         if n != nf:
             assert where == 'obsm', f'Indexing is only supported for `adata.obsm`, found {nf} in adata.`{where}`.'
             _, ix = n.split(ignore_after)
-            assert nf == _, 'Sanity check failed'
+            assert nf == _, 'Unable to parse input.'
             val = val[int(ix)]
 
         msg = None
@@ -65,7 +161,7 @@ def skip_or_filter(adata, needles, haystack, where='', dtype=None,
 
         if msg is not None:
             if not skip:
-                assert False, msg
+                raise RuntimeError(msg)
             warnings.warn(msg + ' Skipping.')
             continue
 
@@ -75,8 +171,22 @@ def skip_or_filter(adata, needles, haystack, where='', dtype=None,
 
 
 def has_attributes(*args, **kwargs):
+    '''
+    Params
+    --------
+
+    Returns
+    --------
+    '''
 
     def inner(fn):
+        '''
+        Params
+        --------
+
+        Returns
+        --------
+        '''
 
         @wraps(fn)
         def inner2(*fargs, **fkwargs):
@@ -124,6 +234,13 @@ def has_attributes(*args, **kwargs):
 
 
 def wrap_as_panel(fn):
+    '''
+    Params
+    --------
+    
+    Returns
+    --------
+    '''
 
     @wraps(fn)
     def inner(*args, **kwargs):
@@ -131,6 +248,7 @@ def wrap_as_panel(fn):
         res = fn(*args, **kwargs)
         if res is None:
             return None
+
         res = pn.panel(res)
         if reverse:
             res.reverse()
@@ -140,6 +258,13 @@ def wrap_as_panel(fn):
 
 
 def wrap_as_col(fn):
+    '''
+    Params
+    --------
+
+    Returns
+    --------
+    '''
 
     @wraps(fn)
     def inner(*args, **kwargs):
@@ -157,25 +282,47 @@ def wrap_as_col(fn):
     return inner
 
 
-def get_data(adata, key, haystacks=['obs', 'obsm']):
+def get_data(adata, needle, ignore_after=OBSM_SEP, haystacks=['obs', 'obsm']):
+    f'''
+    Search for a needle in multiple haystacks.
+
+    Params
+    --------
+    adata: anndata.AnnData
+        anndata object
+    needle: Str
+        needle to search for
+    ignore_after: Str, optional (default: `{OBSM_SEP}`)
+        token used for extracting the actual key name
+        from the needle of form `KeyTokenIndex`, neeeded
+        when `'obsm' in haystacks`, useful e.g. for extracting specific components
+    haystack: List[Str], optional (default: `['obs', 'obsm']`)
+        attributes of `anndata.AnnData`
+
+    Returns
+    --------
+    (result, is_categorical): Tuple[Object, Bool]
+        the found object and whether it's categorical
+    '''
+
     for haystack in haystacks:
         obj = getattr(adata, haystack)
-        if ':' in key and haystack == 'obsm':
-            k, ix = key.split(OBSM_SEP)
+        if ignore_after in needle and haystack == 'obsm':
+            k, ix = needle.split(ignore_after)
             ix = int(ix)
         else:
-            k, ix = key, None
+            k, ix = needle, None
 
         if k in obj:
             res = obj[k]
             if ix is not None:
                 res = res[:, ix]
             if res.shape != (adata.n_obs, ):
-                msg = f'`{key}` in `adata.{haystack}` has wrong shape of `{res.shape}`.'
+                msg = f'`{needle}` in `adata.{haystack}` has wrong shape of `{res.shape}`.'
                 if haystack == 'obsm':
-                    msg += f' Try using `{key}{OBSM_SEP}ix`, `ix` in [0, {res.shape[-1]}).'
+                    msg += f' Try using `{needle}{OBSM_SEP}ix`, `ix` in [0, {res.shape[-1]}).'
                 raise ValueError(msg)
 
             return res, is_categorical(res)
 
-    raise ValueError(f'Unable to find `{key}` in `adata.{haystacks}`.')
+    raise ValueError(f'Unable to find `{needle}` in `adata.{haystacks}`.')
