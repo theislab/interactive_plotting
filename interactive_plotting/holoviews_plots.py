@@ -163,7 +163,8 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obsm_ke
 
     if subsample == 'datashade':
         dynmaps = [dynspread(datashade(d, aggregator=ds.mean('gene'), color_key='gene',
-                                       cmap=cmap, streams=[hv.streams.RangeXY(transient=True)])) for d in dynmaps]
+                                       cmap=cmap, streams=[hv.streams.RangeXY(transient=True)]))
+                   for d in dynmaps]
     elif subsample == 'decimate':
         dynmaps = [decimate(d, max_samples=int(adata.n_obs * keep_frac),
                             streams=[hv.streams.RangeXY(transient=True)], random_seed=seed) for d in dynmaps]
@@ -439,7 +440,8 @@ def dpt(adata, cluster_key, genes=None, bases=['diffmap'], use_holomap=False,
                                      cmap=cont_cmap, clim=minmax(data))
 
         if typp == 'hist':
-            return hv.Histogram(np.histogram(pseudotime, bins=20)).opts(xlabel='pseudotime', ylabel='frequence', color='#f2f2f2')
+            return hv.Histogram(np.histogram(pseudotime, bins=20)).opts(xlabel='pseudotime', ylabel='frequence',
+                                                                        color='#f2f2f2', tools=['hover'])
 
         raise RuntimeError(f'Unknown type `{typp}` for create_plot.')
 
