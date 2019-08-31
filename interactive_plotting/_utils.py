@@ -17,6 +17,8 @@ SUBSAMPLE_THRESH = 30_000
 HOLOMAP_THRESH = 50
 OBSM_SEP = ':'
 
+CBW = 10  # colorbar width
+
 
 def iterable(obj):
     '''

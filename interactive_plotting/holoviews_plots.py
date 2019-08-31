@@ -62,6 +62,7 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obsm_ke
 
         return scatter.opts(cmap=cmap, color='gene',
                             colorbar=True,
+                            colorbar_opts={'width': CBW},
                             clim=minmax(data),
                             xlim=minmax(emb[:, 0]),
                             ylim=minmax(emb[:, 1]),
@@ -167,10 +168,10 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obsm_ke
         dynmaps = [decimate(d, max_samples=int(adata.n_obs * keep_frac),
                             streams=[hv.streams.RangeXY(transient=True)], random_seed=seed) for d in dynmaps]
 
-    dynmaps = [d.opts(framewise=True, axiswise=True, height=plot_height, width=plot_width) for d in dynmaps]
+    dynmaps = [d.opts(framewise=True, axiswise=True, frame_height=plot_height, frame_width=plot_width) for d in dynmaps]
 
     if cols is None:
-        return dynmaps[0].opts(title='', height=plot_height, width=plot_width)
+        return dynmaps[0].opts(title='', frame_height=plot_height, frame_width=plot_width)
 
     return hv.Layout(dynmaps).opts(title='', height=plot_height, width=plot_width).cols(cols)
 
@@ -335,7 +336,7 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
                             streams=[hv.streams.RangeXY(transient=True)], random_seed=seed) for d in dynmaps]
 
     if cols is None:
-        dynmap = dynmaps[0].opts(title='', height=plot_height, width=plot_width, axiswise=True, framewise=True)
+        dynmap = dynmaps[0].opts(title='', frame_height=plot_height, frame_width=plot_width, axiswise=True, framewise=True)
         if legend is not None:
             dynmap = (dynmap * legend).opts(legend_position=legend_loc)
     else:
@@ -343,7 +344,7 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
             dynmaps = [d * l for d, l in zip(dynmaps, legend.layout('Basis'))]
 
         dynmap = hv.Layout([d.opts(axiswise=True, framewise=True, legend_position=legend_loc,
-                                   height=plot_height, width=plot_width) for d in dynmaps])
+                                   frame_height=plot_height, frame_width=plot_width) for d in dynmaps])
 
     return dynmap.cols(cols).opts(title='', height=plot_height, width=plot_width) if cols is not None else dynmap
 
@@ -401,7 +402,7 @@ def dpt(adata, cluster_key, genes=None, bases=['diffmap'], use_holomap=False,
                 # we're manually creating legend (for datashade)
                 return scatter.opts(cmap=cat_cmap, show_legend=False)
 
-            return scatter.opts(colorbar=True, colorbar_opts={'width': 10},
+            return scatter.opts(colorbar=True, colorbar_opts={'width': CBW},
                                 cmap=cont_cmap, clim=minmax(data))
 
         if typp == 'emb':
@@ -411,7 +412,7 @@ def dpt(adata, cluster_key, genes=None, bases=['diffmap'], use_holomap=False,
             return scatter.opts(title='Pseudotime',
                                 cmap=cont_cmap, color='pseudotime',
                                 colorbar=True,
-                                colorbar_opts={'width': 10},
+                                colorbar_opts={'width': CBW},
                                 clim=minmax(pseudotime),
                                 xlim=minmax(emb[:, 0]),
                                 ylim=minmax(emb[:, 1]),
@@ -434,7 +435,7 @@ def dpt(adata, cluster_key, genes=None, bases=['diffmap'], use_holomap=False,
                 # we're manually creating legend (for datashade)
                 return scatter_expr.opts(cmap=cat_cmap, show_legend=False)
 
-            return scatter_expr.opts(colorbar=True, colorbar_opts={'width': 10},
+            return scatter_expr.opts(colorbar=True, colorbar_opts={'width': CBW},
                                      cmap=cont_cmap, clim=minmax(data))
 
         if typp == 'hist':
@@ -503,7 +504,7 @@ def dpt(adata, cluster_key, genes=None, bases=['diffmap'], use_holomap=False,
     emb = hv.DynamicMap(partial(create_scatterplot, typp='emb'), kdims=kdims)
     emb_d = hv.DynamicMap(partial(create_scatterplot, typp='emb_discrete'), kdims=kdims)
     expr = hv.DynamicMap(partial(create_scatterplot, typp='expr'), kdims=kdims)
-    hist = hv.DynamicMap(partial(create_scatterplot, typp='hist'), kdims=kdims).opts(height=plot_height, width=plot_width, axiswise=True)
+    hist = hv.DynamicMap(partial(create_scatterplot, typp='hist'), kdims=kdims).opts(frame_height=plot_height, frame_width=plot_width, axiswise=True)
 
     if subsample == 'datashade':
         emb = dynspread(datashade(emb, aggregator=ds.mean('pseudotime'), cmap=cont_cmap,
@@ -515,9 +516,9 @@ def dpt(adata, cluster_key, genes=None, bases=['diffmap'], use_holomap=False,
     elif subsample == 'decimate':
         emb, emb_d, expr = (decimate(d, max_samples=int(adata.n_obs * keep_frac)) for d in (emb, emb_d, expr))
 
-    emb = emb.opts(axiswise=False, framewise=True, height=plot_height, width=plot_width)
-    expr = expr.opts(axiswise=True, framewise=True, height=plot_height, width=plot_width)
-    emb_d = emb_d.opts(axiswise=True, framewise=True, height=plot_height, width=plot_width)
+    emb = emb.opts(axiswise=False, framewise=True, frame_height=plot_height, frame_width=plot_width)
+    expr = expr.opts(axiswise=True, framewise=True, frame_height=plot_height, frame_width=plot_width)
+    emb_d = emb_d.opts(axiswise=True, framewise=True, frame_height=plot_height, frame_width=plot_width)
 
     if show_legend and legend is not None:
         emb_d = (emb_d * legend).opts(legend_position=legend_loc, show_legend=True)
