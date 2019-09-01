@@ -20,15 +20,58 @@ import datashader as ds
 
 
 @wrap_as_panel
-def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
-            obs_keys=[], skip=True, subsample='datashade', keep_frac=0.5, use_holomap=False,
-            sort=True, seed=42, cmap=Viridis256, cols=2, plot_height=400, plot_width=400):
+def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_keys=[],
+            obsm_keys=[], subsample='datashade', keep_frac=None, lazy_loading=True,
+            sort=True, skip=True, seed=None, cols=2, cmap=None, plot_height=400, plot_width=400):
     '''
+    Scatter plot for continuous observations.
+
     Params
     --------
+    adata: anndata.Anndata
+        anndata object
+    genes: List[Str], optional (default: `None`)
+        list of genes to add for visualization
+        if `None`, use `adata.var_names`
+    bases: List[Str], optional (default: `['umap', 'pca']`)
+        bases in `adata.obsm`
+    components: Union[List[Int], List[List[Int]]], optional (default: `[1, 2]`)
+        components of specified `bases`
+        if it's of type `List[Int]`, all the bases have use the same components
+    obs_keys: List[Str], optional (default: `[]`)
+        keys of continuous observations in `adata.obs`
+    obsm_keys: List[Str], optional (default: `[]`)
+        keys of continuous observations in `adata.obsm`
+    subsample: Str, optional (default: `'datashade'`)
+        subsampling strategy for large data
+        possible values are `None, 'none', 'datashade', 'decimate', 'sample_density', 'sample_unif'`
+        when using `subsample='datashade'`, colorbar is not visible
+    keep_frac: Float, optional (default: `adata.n_obs / 5`)
+        number of observations to keep when `subsample='decimate'`
+    lazy_loading: Bool, optional (default: `False`)
+        only visualize when necessary
+        for notebook sharing, consider using `lazy_loading=False`
+    sort: Bool, optional (default: `True`)
+        whether sort the `genes`, `obs_keys` and `obsm_keys`
+        in ascending order
+    skip: Bool, optional (default: `True`)
+        skip all the keys not found in the corresponding collections
+    seed: Int, optional (default: `None`)
+        random seed, used when `subsample='decimate'``
+    cols: Int, optional (default: `2`)
+        number of columns when plotting bases
+        if `None`, use togglebar
+    cmap: List[Str], optional (default: `bokeh.palettes.Viridis256`)
+        color in hex format
+    plot_height: Int, optional (default: `400`)
+        height of the plot in pixels
+    plot_width: Int, optional (default: `400`)
+        width of the plot in pixels
 
     Returns
     --------
+    plot: Union[hv.Layout, hv.HoloMap, hv.DynamicMap]
+        holoviews plot
     '''
 
     def create_scatterplot(gene, *args, basis=None):
@@ -72,7 +115,7 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obsm_ke
     def _cs(basis, gene, *args):
         return create_scatterplot(gene, *args, basis=basis)
 
-    assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
+    assert keep_frac is None or (keep_frac >= 0 and keep_frac <= 1), f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
     assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
 
     if not iterable(obs_keys):
@@ -134,8 +177,11 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obsm_ke
     if adata.n_obs > SUBSAMPLE_THRESH and subsample in NO_SUBSAMPLE:
         warnings.warn(f'Number of cells `{adata.n_obs}` > `{SUBSAMPLE_THRESH}`. Consider specifying `subsample={SUBSAMPLING_STRATEGIES}`.')
 
-    if len(conditions) > HOLOMAP_THRESH and use_holomap:
-        warnings.warn(f'Number of conditions `{len(conditions)}` > `{HOLOMAP_THRESH}`. Consider specifying `use_holomap=False`.')
+    if len(conditions) > HOLOMAP_THRESH and not lazy_loading:
+        warnings.warn(f'Number of conditions `{len(conditions)}` > `{HOLOMAP_THRESH}`. Consider specifying `lazy_loading=True`.')
+
+    if cmap is None:
+        cmap = Viridis256
 
     lims = dict(x=dict(), y=dict())
     for basis in bases:
@@ -146,7 +192,7 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obsm_ke
     kdims = [hv.Dimension('Basis', values=bases),
              hv.Dimension('Condition', values=conditions)]
 
-    if use_holomap:
+    if not lazy_loading:
         dynmaps = [hv.HoloMap({(g, b):create_scatterplot(g, basis=b) for g in conditions for b in bases}, kdims=kdims[::-1])]
     else:
         for basis, comp in zip(bases, components):
@@ -166,6 +212,7 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obsm_ke
                                        cmap=cmap, streams=[hv.streams.RangeXY(transient=True)]))
                    for d in dynmaps]
     elif subsample == 'decimate':
+        keep_frac = keep_frac if keep_frac is not None else adata.n_obs / 5
         dynmaps = [decimate(d, max_samples=int(adata.n_obs * keep_frac),
                             streams=[hv.streams.RangeXY(transient=True)], random_seed=seed) for d in dynmaps]
 
@@ -179,7 +226,7 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obsm_ke
 
 @wrap_as_panel
 def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
-             obs_keys=[], skip=True, subsample='decimate', keep_frac=0.5, use_holomap=False,
+             obs_keys=[], skip=True, subsample='decimate', keep_frac=0.5, lazy_loading=True,
              sort=True, seed=42, cmap=Sets1to3, cols=None, legend_loc='top_right', show_legend=True,
              plot_height=400, plot_width=400):
     '''
@@ -289,8 +336,8 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
     if adata.n_obs > SUBSAMPLE_THRESH and subsample in NO_SUBSAMPLE:
         warnings.warn(f'Number of cells `{adata.n_obs}` > `{SUBSAMPLE_THRESH}`. Consider specifying `subsample={SUBSAMPLING_STRATEGIES}`.')
 
-    if len(conditions) > HOLOMAP_THRESH and use_holomap:
-        warnings.warn(f'Number of  conditions `{len(conditions)}` > `{HOLOMAP_THRESH}`. Consider specifying `use_holomap=False`.')
+    if len(conditions) > HOLOMAP_THRESH and not lazy_loading:
+        warnings.warn(f'Number of  conditions `{len(conditions)}` > `{HOLOMAP_THRESH}`. Consider specifying `lazy_loading=True`.')
 
     lims = dict(x=dict(), y=dict())
     for basis in bases:
@@ -308,7 +355,7 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
         cmaps[cond] = odict(zip(adata.obs[cond].cat.categories,
                                 cmap if subsample == 'datashade' else adata.uns.get(color_key, cmap)))
 
-    if use_holomap:
+    if not lazy_loading:
         dynmap = hv.HoloMap({(c, b):create_scatterplot(c, b) for c in conditions for b in bases}, kdims=kdims)
     else:
         for basis, comp in zip(bases, components):
@@ -351,7 +398,7 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
 
 
 @wrap_as_col
-def dpt(adata, cluster_key, genes=None, bases=['diffmap'], use_holomap=False,
+def dpt(adata, cluster_key, genes=None, bases=['diffmap'], lazy_loading=True,
         cat_cmap=Sets1to3, show_legend=True, cont_cmap=Viridis256, legend_loc='top_right',
         components=[1, 2], keep_frac=0.5, subsample='datashade', skip=True,
         sort=True, plot_height=400, plot_width=400, *args, **kwargs):
@@ -484,8 +531,8 @@ def dpt(adata, cluster_key, genes=None, bases=['diffmap'], use_holomap=False,
     if adata.n_obs > SUBSAMPLE_THRESH and subsample in NO_SUBSAMPLE:
         warnings.warn(f'Number of cells `{adata.n_obs}` > `{SUBSAMPLE_THRESH}`. Consider specifying `subsample={SUBSAMPLING_STRATEGIES}`.')
 
-    if len(genes) > HOLOMAP_THRESH and use_holomap:
-        warnings.warn(f'Number of genes `{len(genes)}` > `{HOLOMAP_THRESH}`. Consider specifying `use_holomap=False`.')
+    if len(genes) > HOLOMAP_THRESH and not lazy_loading:
+        warnings.warn(f'Number of genes `{len(genes)}` > `{HOLOMAP_THRESH}`. Consider specifying `lazy_loading=True`.')
 
     kdims = [hv.Dimension('Cell', values=adata.obs_names),
              hv.Dimension('Gene', values=genes),
