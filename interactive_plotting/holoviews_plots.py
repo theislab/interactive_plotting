@@ -441,7 +441,7 @@ def dpt(adata, cluster_key, genes=None, bases=['diffmap'], use_holomap=False,
 
         if typp == 'hist':
             return hv.Histogram(np.histogram(pseudotime, bins=20)).opts(xlabel='pseudotime', ylabel='frequence',
-                                                                        color='#f2f2f2', tools=['hover'])
+                                                                        color='#f2f2f2')
 
         raise RuntimeError(f'Unknown type `{typp}` for create_plot.')
 
@@ -506,7 +506,7 @@ def dpt(adata, cluster_key, genes=None, bases=['diffmap'], use_holomap=False,
     emb = hv.DynamicMap(partial(create_scatterplot, typp='emb'), kdims=kdims)
     emb_d = hv.DynamicMap(partial(create_scatterplot, typp='emb_discrete'), kdims=kdims)
     expr = hv.DynamicMap(partial(create_scatterplot, typp='expr'), kdims=kdims)
-    hist = hv.DynamicMap(partial(create_scatterplot, typp='hist'), kdims=kdims).opts(frame_height=plot_height, frame_width=plot_width, axiswise=True)
+    hist = hv.DynamicMap(partial(create_scatterplot, typp='hist'), kdims=kdims)
 
     if subsample == 'datashade':
         emb = dynspread(datashade(emb, aggregator=ds.mean('pseudotime'), cmap=cont_cmap,
@@ -521,8 +521,9 @@ def dpt(adata, cluster_key, genes=None, bases=['diffmap'], use_holomap=False,
     emb = emb.opts(axiswise=False, framewise=True, frame_height=plot_height, frame_width=plot_width)
     expr = expr.opts(axiswise=True, framewise=True, frame_height=plot_height, frame_width=plot_width)
     emb_d = emb_d.opts(axiswise=True, framewise=True, frame_height=plot_height, frame_width=plot_width)
+    hist = hist.opts(axiswise=True, framewise=True, frame_height=plot_height, frame_width=plot_width)
 
     if show_legend and legend is not None:
         emb_d = (emb_d * legend).opts(legend_position=legend_loc, show_legend=True)
 
-    return ((emb + emb_d) + (hist + expr).opts(axiswise=True, framewise=True, title='')).cols(2)
+    return ((emb + emb_d)  + (hist + expr).opts(axiswise=True, framewise=True, title='')).cols(2)
