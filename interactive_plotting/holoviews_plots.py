@@ -44,8 +44,10 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
         keys of categorical observations in `adata.obsm`
     subsample: Str, optional (default: `'datashade'`)
         subsampling strategy for large data
-        possible values are `None, 'none', 'datashade', 'decimate', 'sample_density', 'sample_unif'`
+        possible values are `None, 'none', 'datashade', 'decimate', 'density', 'uniform'`
+        using `subsample='datashade'` is preferred over other options since it does not subset
         when using `subsample='datashade'`, colorbar is not visible
+        `'density'` and `'uniform'` use first element of `bases` for their computation
     keep_frac: Float, optional (default: `adata.n_obs / 5`)
         number of observations to keep when `subsample='decimate'`
     lazy_loading: Bool, optional (default: `False`)
@@ -115,8 +117,16 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
     def _cs(basis, gene, *args):
         return create_scatterplot(gene, *args, basis=basis)
 
-    assert keep_frac is None or (keep_frac >= 0 and keep_frac <= 1), f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
+    if keep_frac is None:
+        keep_frac = 0.2
+
+    assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
     assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
+
+    if subsample == 'uniform':
+        adata = sample_unif(adata, 30, bases[0])
+    elif subsample == 'density':
+        adata = sample_density(adata, int(keep_frac * adata.n_obs), bases[0], seed=seed)
 
     if not iterable(obs_keys):
         obs_keys = [obs_keys]
@@ -183,9 +193,6 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
     if cmap is None:
         cmap = Viridis256
 
-    if keep_frac is None:
-        keep_frac = adata.n_obs / 5
-
     lims = dict(x=dict(), y=dict())
     for basis in bases:
         emb = adata.obsm[f'X_{basis}']
@@ -249,8 +256,10 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
         keys of continuous observations in `adata.obsm`
     subsample: Str, optional (default: `'datashade'`)
         subsampling strategy for large data
-        possible values are `None, 'none', 'datashade', 'decimate', 'sample_density', 'sample_unif'`
+        possible values are `None, 'none', 'datashade', 'decimate', 'density', 'uniform'`
+        using `subsample='datashade'` is preferred over other options since it does not subset
         when using `subsample='datashade'`, colorbar is not visible
+        `'density'` and `'uniform'` use first element of `bases` for their computation
     keep_frac: Float, optional (default: `adata.n_obs / 5`)
         number of observations to keep when `subsample='decimate'`
     lazy_loading: Bool, optional (default: `False`)
@@ -328,8 +337,16 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
     def _cs(basis, cond, *args):
         return create_scatterplot(cond, *args, basis=basis)
 
-    assert keep_frac is None or (keep_frac >= 0 and keep_frac <= 1), f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
+    if keep_frac is None:
+        keep_frac = 0.2
+
+    assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
     assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
+
+    if subsample == 'uniform':
+        adata = sample_unif(adata, 30, bases[0])
+    elif subsample == 'density':
+        adata = sample_density(adata, int(keep_frac * adata.n_obs), bases[0], seed=seed)
 
     if not iterable(obs_keys):
         obs_keys = [obs_keys]
@@ -385,9 +402,6 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
 
     if cmap is None:
         cmap = Sets1to3
-
-    if keep_frac is None:
-        keep_frac = adata.n_obs / 5
 
     lims = dict(x=dict(), y=dict())
     for basis in bases:
@@ -474,8 +488,10 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
         if it's of type `List[Int]`, all the bases have use the same components
     subsample: Str, optional (default: `'datashade'`)
         subsampling strategy for large data
-        possible values are `None, 'none', 'datashade', 'decimate', 'sample_density', 'sample_unif'`
+        possible values are `None, 'none', 'datashade', 'decimate', 'density', 'uniform'`
+        using `subsample='datashade'` is preferred over other options since it does not subset
         when using `subsample='datashade'`, colorbar is not visible
+        `'density'` and `'uniform'` use first element of `bases` for their computation
     keep_frac: Float, optional (default: `adata.n_obs / 5`)
         number of observations to keep when `subsample='decimate'`
     sort: Bool, optional (default: `True`)
@@ -510,9 +526,6 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
     plot: `panel.Column`
         holoviews plot wrapped in `panel.Column`
     '''
-
-    assert keep_frac is None or (keep_frac >= 0 and keep_frac <= 1), f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
-    assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
 
     def create_scatterplot(root_cell, gene, basis, *args, typp='expr'):
         ixs = np.where(bases == basis)[0][0]
@@ -594,6 +607,18 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
 
         raise RuntimeError(f'Unknown type `{typp}` for create_plot.')
 
+    if keep_frac is None:
+        keep_frac = 0.2
+
+    assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
+    assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
+
+    if subsample == 'uniform':
+        adata = sample_unif(adata, 30, bases[0])
+    elif subsample == 'density':
+        adata = sample_density(adata, int(keep_frac * adata.n_obs), bases[0], seed=seed)
+
+
     if genes is None:
         genes = adata.var_names
     elif not iterable(genes):
@@ -638,9 +663,6 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
 
     if cont_cmap is None:
         cont_cmap = Viridis256
-
-    if keep_frac is None:
-        keep_frac = adata.n_obs / 5
 
     kdims = [hv.Dimension('Cell', values=adata.obs_names),
              hv.Dimension('Gene', values=genes),

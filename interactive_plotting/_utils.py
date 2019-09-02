@@ -3,14 +3,16 @@
 from functools import wraps
 from collections import Iterable
 from inspect import signature
+from sklearn.neighbors import NearestNeighbors
 
 import numpy as np
+import pandas as pd
 import warnings
 import panel as pn
 
 
 NO_SUBSAMPLE = (None, 'none')
-SUBSAMPLING_STRATEGIES = ('datashade', 'decimate', 'sample_density', 'sample_unif')
+SUBSAMPLING_STRATEGIES = ('datashade', 'decimate', 'density', 'uniform')
 ALL_SUBSAMPLING_STRATEGIES = NO_SUBSAMPLE + SUBSAMPLING_STRATEGIES
 
 SUBSAMPLE_THRESH = 30_000
@@ -380,3 +382,62 @@ def get_data(adata, needle, ignore_after=OBSM_SEP, haystacks=['obs', 'obsm']):
             return res, is_categorical(res)
 
     raise ValueError(f'Unable to find `{needle}` in `adata.{haystacks}`.')
+
+
+# based on:
+# https://github.com/velocyto-team/velocyto-notebooks/blob/master/python/DentateGyrus.ipynb
+def sample_unif(adata, steps, basis='umap'):
+    if not isinstance(steps, (tuple, list)):
+        steps = (steps, steps)
+
+    embedding = adata.obsm[f'X_{basis}'][:, :2]
+    grs = []
+
+    for i in range(embedding.shape[1]):
+        m, M = np.min(embedding[:, i]), np.max(embedding[:, i])
+        m = m - 0.025 * np.abs(M - m)
+        M = M + 0.025 * np.abs(M - m)
+        gr = np.linspace(m, M, num=steps[i])
+        grs.append(gr)
+
+    meshes_tuple = np.meshgrid(*grs)
+    gridpoints_coordinates = np.vstack([i.flat for i in meshes_tuple]).T
+
+    nn = NearestNeighbors()
+    nn.fit(embedding)
+    dist, ixs = nn.kneighbors(gridpoints_coordinates, 1)
+
+    min_dist = np.sqrt((meshes_tuple[0][0, 0] - meshes_tuple[0][0, 1]) ** 2 +
+                             (meshes_tuple[1][0, 0] - meshes_tuple[1][1, 0]) ** 2) / 2
+
+    ixs = ixs[dist < min_dist]
+    ixs = np.unique(ixs)
+
+    return adata[ixs].copy()
+
+
+def sample_density(adata, size, basis='umap', key=None, seed=None):
+    if size >= adata.n_obs:
+        return adata
+
+    if key is not None:
+        density_key = f'{basis}_density_{key}'
+        assert density_key in adata.obs.keys(), f'`{density_key}` not found in `adata.obs`. Try running `sc.tl.embedding_density` with `groups="{key}"`.'
+        # normalize, flatten the index
+        tmp = pd.DataFrame(adata.obs.groupby(key).apply(lambda df: np.exp(df[density_key]) / np.sum(np.exp(df[density_key])))).reset_index()
+        # cleanup before join
+        tmp.index = tmp['index']
+        del tmp['index']
+        tmp.rename(colums={density_key: 'prob_density',
+                           key: f'{key}_test'}, inplace=True)
+        tmp = adata.obs.join(tmp, on='index')
+        assert all(tmp[key] == tmp[f'{key}_test']), 'something went terribly wrong when merging fataframes'
+    else:
+        assert f'{basis}_density' in adata.obs.keys(), f'`{basis}_density` not found in `adata.obs`. Try running `sc.tl.embedding_density`.'
+        tmp = pd.DataFrame(np.exp(adata.obs[f'{basis}_density']) / np.sum(np.exp(adata.obs[f'{basis}_density'])))
+        tmp.rename(columns={f'{basis}_density': 'prob_density'}, inplace=True)
+
+    state = np.random.RandomState(seed)
+    ixs = state.choice(range(adata.n_obs), size=size, p=tmp['prob_density'], replace=False)
+
+    return adata[ixs].copy()
