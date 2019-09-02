@@ -39,9 +39,9 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
         components of specified `bases`
         if it's of type `List[Int]`, all the bases have use the same components
     obs_keys: List[Str], optional (default: `[]`)
-        keys of continuous observations in `adata.obs`
+        keys of categorical observations in `adata.obs`
     obsm_keys: List[Str], optional (default: `[]`)
-        keys of continuous observations in `adata.obsm`
+        keys of categorical observations in `adata.obsm`
     subsample: Str, optional (default: `'datashade'`)
         subsampling strategy for large data
         possible values are `None, 'none', 'datashade', 'decimate', 'sample_density', 'sample_unif'`
@@ -62,7 +62,7 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
         number of columns when plotting bases
         if `None`, use togglebar
     cmap: List[Str], optional (default: `bokeh.palettes.Viridis256`)
-        color in hex format
+        continuous colormap in hex format
     plot_height: Int, optional (default: `400`)
         height of the plot in pixels
     plot_width: Int, optional (default: `400`)
@@ -70,8 +70,8 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
 
     Returns
     --------
-    plot: Union[hv.Layout, hv.HoloMap, hv.DynamicMap]
-        holoviews plot
+    plot: panel.panel
+        holoviews plot wrapped in `panel.panel`
     '''
 
     def create_scatterplot(gene, *args, basis=None):
@@ -183,6 +183,9 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
     if cmap is None:
         cmap = Viridis256
 
+    if keep_frac is None:
+        keep_frac = adata.n_obs / 5
+
     lims = dict(x=dict(), y=dict())
     for basis in bases:
         emb = adata.obsm[f'X_{basis}']
@@ -212,7 +215,6 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
                                        cmap=cmap, streams=[hv.streams.RangeXY(transient=True)]))
                    for d in dynmaps]
     elif subsample == 'decimate':
-        keep_frac = keep_frac if keep_frac is not None else adata.n_obs / 5
         dynmaps = [decimate(d, max_samples=int(adata.n_obs * keep_frac),
                             streams=[hv.streams.RangeXY(transient=True)], random_seed=seed) for d in dynmaps]
 
@@ -226,15 +228,57 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
 
 @wrap_as_panel
 def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
-             obs_keys=[], skip=True, subsample='decimate', keep_frac=0.5, lazy_loading=True,
-             sort=True, seed=42, cmap=Sets1to3, cols=None, legend_loc='top_right', show_legend=True,
-             plot_height=400, plot_width=400):
+             obs_keys=[], subsample='decimate', keep_frac=None, lazy_loading=True,
+             sort=True, skip=True, seed=None, legend_loc='top_right', cols=2, cmap=None,
+             show_legend=True, plot_height=400, plot_width=400):
     '''
+    Scatter plot for categorical observations.
+
     Params
     --------
+    adata: anndata.Anndata
+        anndata object
+    bases: List[Str], optional (default: `['umap', 'pca']`)
+        bases in `adata.obsm`
+    components: Union[List[Int], List[List[Int]]], optional (default: `[1, 2]`)
+        components of specified `bases`
+        if it's of type `List[Int]`, all the bases have use the same components
+    obs_keys: List[Str], optional (default: `[]`)
+        keys of continuous observations in `adata.obs`
+    obsm_keys: List[Str], optional (default: `[]`)
+        keys of continuous observations in `adata.obsm`
+    subsample: Str, optional (default: `'datashade'`)
+        subsampling strategy for large data
+        possible values are `None, 'none', 'datashade', 'decimate', 'sample_density', 'sample_unif'`
+        when using `subsample='datashade'`, colorbar is not visible
+    keep_frac: Float, optional (default: `adata.n_obs / 5`)
+        number of observations to keep when `subsample='decimate'`
+    lazy_loading: Bool, optional (default: `False`)
+        only visualize when necessary
+        for notebook sharing, consider using `lazy_loading=False`
+    sort: Bool, optional (default: `True`)
+        whether sort the `genes`, `obs_keys` and `obsm_keys`
+        in ascending order
+    skip: Bool, optional (default: `True`)
+        skip all the keys not found in the corresponding collections
+    seed: Int, optional (default: `None`)
+        random seed, used when `subsample='decimate'``
+    legend_loc: Str, optional (default: `top_right`)
+        position of the legend
+    cols: Int, optional (default: `2`)
+        number of columns when plotting bases
+        if `None`, use togglebar
+    cmap: List[Str], optional (default: `datashader.colors.Sets1to3`)
+        categorical colormap in hex format
+    plot_height: Int, optional (default: `400`)
+        height of the plot in pixels
+    plot_width: Int, optional (default: `400`)
+        width of the plot in pixels
 
     Returns
     --------
+    plot: `panel.panel`
+        holoviews plot wrapped in `panel.panel`
     '''
 
     def create_legend(condition, basis):
@@ -284,7 +328,7 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
     def _cs(basis, cond, *args):
         return create_scatterplot(cond, *args, basis=basis)
 
-    assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
+    assert keep_frac is None or (keep_frac >= 0 and keep_frac <= 1), f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
     assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
 
     if not iterable(obs_keys):
@@ -339,6 +383,12 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
     if len(conditions) > HOLOMAP_THRESH and not lazy_loading:
         warnings.warn(f'Number of  conditions `{len(conditions)}` > `{HOLOMAP_THRESH}`. Consider specifying `lazy_loading=True`.')
 
+    if cmap is None:
+        cmap = Sets1to3
+
+    if keep_frac is None:
+        keep_frac = adata.n_obs / 5
+
     lims = dict(x=dict(), y=dict())
     for basis in bases:
         emb = adata.obsm[f'X_{basis}']
@@ -389,28 +439,79 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
             dynmap = (dynmap * legend).opts(legend_position=legend_loc)
     else:
         if legend is not None:
-            dynmaps = [d * l for d, l in zip(dynmaps, legend.layout('Basis'))]
+            dynmaps = [(d * l).opts(legend_position=legend_loc)
+                       for d, l in zip(dynmaps, legend.layout('Basis'))]
 
-        dynmap = hv.Layout([d.opts(axiswise=True, framewise=True, legend_position=legend_loc,
+        dynmap = hv.Layout([d.opts(axiswise=True, framewise=True,
                                    frame_height=plot_height, frame_width=plot_width) for d in dynmaps])
 
     return dynmap.cols(cols).opts(title='', height=plot_height, width=plot_width) if cols is not None else dynmap
 
 
 @wrap_as_col
-def dpt(adata, cluster_key, genes=None, bases=['diffmap'], lazy_loading=True,
-        cat_cmap=Sets1to3, show_legend=True, cont_cmap=Viridis256, legend_loc='top_right',
-        components=[1, 2], keep_frac=0.5, subsample='datashade', skip=True,
-        sort=True, plot_height=400, plot_width=400, *args, **kwargs):
+def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
+        subsample='datashade', keep_frac=None, sort=True, skip=True,
+        seed=None, show_legend=True, legend_loc='top_right',
+        cat_cmap=None, cont_cmap=None,
+        plot_height=400, plot_width=400, *args, **kwargs):
     '''
+    Scatter plot for categorical observations.
+
     Params
     --------
+    adata: anndata.Anndata
+        anndata object
+    key: Str,
+        key in `adata.obs` to be visualized in top right plot
+        can be categorical or continuous
+    genes: List[Str], optional (default: `None`)
+        list of genes to add for visualization
+        if `None`, use `adata.var_names`
+    bases: List[Str], optional (default: `['umap', 'pca']`)
+        bases in `adata.obsm`
+    components: Union[List[Int], List[List[Int]]], optional (default: `[1, 2]`)
+        components of specified `bases`
+        if it's of type `List[Int]`, all the bases have use the same components
+    subsample: Str, optional (default: `'datashade'`)
+        subsampling strategy for large data
+        possible values are `None, 'none', 'datashade', 'decimate', 'sample_density', 'sample_unif'`
+        when using `subsample='datashade'`, colorbar is not visible
+    keep_frac: Float, optional (default: `adata.n_obs / 5`)
+        number of observations to keep when `subsample='decimate'`
+    sort: Bool, optional (default: `True`)
+        whether sort the `genes`, `obs_keys` and `obsm_keys`
+        in ascending order
+    skip: Bool, optional (default: `True`)
+        skip all the keys not found in the corresponding collections
+    seed: Int, optional (default: `None`)
+        random seed, used when `subsample='decimate'``
+    show_legend: Bool, optional (default: `True`)
+        whether to show legend
+    legend_loc: Str, optional (default: `top_right`)
+        position of the legend
+    cols: Int, optional (default: `2`)
+        number of columns when plotting bases
+        if `None`, use togglebar
+    cat_cmap: List[Str], optional (default: `datashader.colors.Sets1to3`)
+        categorical colormap in hex format
+        used when `key` is categorical variable
+    cont_cmap: List[Str], optional (default: `bokeh.palettes.Viridis256`)
+        continuous colormap in hex format
+        used when `key` is continuous variable
+    plot_height: Int, optional (default: `400`)
+        height of the plot in pixels
+    plot_width: Int, optional (default: `400`)
+        width of the plot in pixels
+    *args, **kwargs:
+        additional arguments for `sc.tl.dpt`
 
     Returns
     --------
+    plot: `panel.Column`
+        holoviews plot wrapped in `panel.Column`
     '''
 
-    assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
+    assert keep_frac is None or (keep_frac >= 0 and keep_frac <= 1), f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
     assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
 
     def create_scatterplot(root_cell, gene, basis, *args, typp='expr'):
@@ -439,7 +540,7 @@ def dpt(adata, cluster_key, genes=None, bases=['diffmap'], lazy_loading=True,
             scatter = hv.Scatter({'x': emb[:, 0], 'y': emb[:, 1], 'condition': data},
                                  kdims=[x, y], vdims='condition')
 
-            scatter_ex = scatter.opts(title=cluster_key,
+            scatter_ex = scatter.opts(title=key,
                                       color='condition',
                                       xlim=minmax(emb[:, 0]),
                                       ylim=minmax(emb[:, 1]),
@@ -475,7 +576,7 @@ def dpt(adata, cluster_key, genes=None, bases=['diffmap'], lazy_loading=True,
             scatter_expr = hv.Scatter({'x': pseudotime, 'y': expr, 'condition': data},
                                       kdims=[x, y], vdims='condition')
 
-            scatter_expr = scatter_expr.opts(title=cluster_key,
+            scatter_expr = scatter_expr.opts(title=key,
                                              color='condition',
                                              xlim=minmax(pseudotime),
                                              ylim=minmax(expr))
@@ -487,7 +588,8 @@ def dpt(adata, cluster_key, genes=None, bases=['diffmap'], lazy_loading=True,
                                      cmap=cont_cmap, clim=minmax(data))
 
         if typp == 'hist':
-            return hv.Histogram(np.histogram(pseudotime, bins=20)).opts(xlabel='pseudotime', ylabel='frequence',
+            return hv.Histogram(np.histogram(pseudotime, bins=20)).opts(xlabel='pseudotime',
+                                                                        ylabel='frequence',
                                                                         color='#f2f2f2')
 
         raise RuntimeError(f'Unknown type `{typp}` for create_plot.')
@@ -531,14 +633,20 @@ def dpt(adata, cluster_key, genes=None, bases=['diffmap'], lazy_loading=True,
     if adata.n_obs > SUBSAMPLE_THRESH and subsample in NO_SUBSAMPLE:
         warnings.warn(f'Number of cells `{adata.n_obs}` > `{SUBSAMPLE_THRESH}`. Consider specifying `subsample={SUBSAMPLING_STRATEGIES}`.')
 
-    if len(genes) > HOLOMAP_THRESH and not lazy_loading:
-        warnings.warn(f'Number of genes `{len(genes)}` > `{HOLOMAP_THRESH}`. Consider specifying `lazy_loading=True`.')
+    if cat_cmap is None:
+        cat_cmap = Sets1to3
+
+    if cont_cmap is None:
+        cont_cmap = Viridis256
+
+    if keep_frac is None:
+        keep_frac = adata.n_obs / 5
 
     kdims = [hv.Dimension('Cell', values=adata.obs_names),
              hv.Dimension('Gene', values=genes),
              hv.Dimension('Basis', values=bases)]
 
-    data, is_cat = get_data(adata, cluster_key)
+    data, is_cat = get_data(adata, key)
     if is_cat:
         data = pd.Categorical(data)
         aggregator = ds.count_cat
