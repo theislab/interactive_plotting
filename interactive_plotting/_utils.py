@@ -6,6 +6,7 @@ from inspect import signature
 from sklearn.neighbors import NearestNeighbors
 
 import numpy as np
+import itertools
 import pandas as pd
 import warnings
 import panel as pn
@@ -150,7 +151,7 @@ def skip_or_filter(adata, needles, haystack, where='', dtype=None,
         if the needle's type differs from `dtype`
     '''
 
-    needles_f = map(lambda n: n[:n.find(ignore_after)], needles) if ignore_after is not None else needles
+    needles_f = list(map(lambda n: n[:n.find(ignore_after)], needles)) if ignore_after is not None else needles
     res = []
 
     for n, nf in zip(needles, needles_f):
@@ -158,11 +159,12 @@ def skip_or_filter(adata, needles, haystack, where='', dtype=None,
             msg = f'`{nf}` not found in `adata.{where}.keys()`.'
             if not skip:
                 assert False, msg
-            warnings.warn(msg + ' Skipping.')
+            if warn:
+                warnings.warn(msg + ' Skipping.')
             continue
 
         col = getattr(adata, where)[nf]
-        val = col.iloc[0]
+        val = col[0] if isinstance(col, np.ndarray) else col.iloc[0]  # np.ndarray of pd.DataFrame
         if n != nf:
             assert where == 'obsm', f'Indexing is only supported for `adata.obsm`, found {nf} in adata.`{where}`.'
             _, ix = n.split(ignore_after)
@@ -186,7 +188,8 @@ def skip_or_filter(adata, needles, haystack, where='', dtype=None,
         if msg is not None:
             if not skip:
                 raise RuntimeError(msg)
-            warnings.warn(msg + ' Skipping.')
+            if warn:
+                warnings.warn(msg + ' Skipping.')
             continue
 
         res.append(n)
@@ -338,7 +341,7 @@ def wrap_as_col(fn):
     return inner
 
 
-def get_data(adata, needle, ignore_after=OBSM_SEP, haystacks=['obs', 'obsm']):
+def get_data(adata, needle, ignore_after=OBSM_SEP, haystacks=['obs', 'obsm', 'var_names']):
     f'''
     Search for a needle in multiple haystacks.
 
@@ -348,11 +351,11 @@ def get_data(adata, needle, ignore_after=OBSM_SEP, haystacks=['obs', 'obsm']):
         anndata object
     needle: Str
         needle to search for
-    ignore_after: Str, optional (default: `{OBSM_SEP}`)
+    ignore_after: Str, optional (default: `'{OBSM_SEP}'`)
         token used for extracting the actual key name
         from the needle of form `KeyTokenIndex`, neeeded
         when `'obsm' in haystacks`, useful e.g. for extracting specific components
-    haystack: List[Str], optional (default: `['obs', 'obsm']`)
+    haystack: List[Str], optional (default: `['obs', 'obsm', 'var_names']`)
         attributes of `anndata.AnnData`
 
     Returns
@@ -370,19 +373,31 @@ def get_data(adata, needle, ignore_after=OBSM_SEP, haystacks=['obs', 'obsm']):
             k, ix = needle, None
 
         if k in obj:
-            res = obj[k]
+            res = obj[k] if haystack != 'var_names' else adata.obs_vector(k)
             if ix is not None:
+                assert res.ndim == 2, f'`adata.{haystack}[{k}]` must have a dimension of 2, found `{res.dim}`.'
+                assert res.shape[-1] > ix, f'Index `{ix}` out of bounds for `adata.{haystack}[{k}]` of shape `{res.shape}`.'
                 res = res[:, ix]
             if res.shape != (adata.n_obs, ):
                 msg = f'`{needle}` in `adata.{haystack}` has wrong shape of `{res.shape}`.'
                 if haystack == 'obsm':
-                    msg += f' Try using `{needle}{OBSM_SEP}ix`, `ix` in [0, {res.shape[-1]}).'
+                    msg += f' Try using `{needle}{OBSM_SEP}ix`, 0 <= `ix` < {res.shape[-1]}.'
                 raise ValueError(msg)
 
             return res, is_categorical(res)
 
     raise ValueError(f'Unable to find `{needle}` in `adata.{haystacks}`.')
 
+
+def get_all_obsm_keys(adata, ixs):
+    if not isinstance(ixs, (tuple, list)):
+        ixs = [ixs]
+
+    assert all(map(lambda ix: ix >= 0, ixs)), f'All indices must be non-negative.'
+
+    return list(itertools.chain.from_iterable((f'{key}{OBSM_SEP}{ix}'
+                                          for key in adata.obsm.keys() if isinstance(adata.obsm[key], np.ndarray) and adata.obsm[key].ndim == 2 and adata.obsm[key].shape[-1] > ix)
+                                          for ix in ixs))
 
 # based on:
 # https://github.com/velocyto-team/velocyto-notebooks/blob/master/python/DentateGyrus.ipynb
