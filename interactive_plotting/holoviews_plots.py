@@ -538,8 +538,9 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
     --------
     adata: anndata.Anndata
         anndata object
-    key: Str,
-        key in `adata.obs` to be visualized in top right plot
+    key: Str
+        key in `adata.obs`, `adata.obsm` or `adata.var_names`
+        to be visualized in top right plot
         can be categorical or continuous
     genes: List[Str], optional (default: `None`)
         list of genes to add for visualization
