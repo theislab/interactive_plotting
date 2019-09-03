@@ -18,6 +18,12 @@ import pandas as pd
 import holoviews as hv
 import datashader as ds
 
+try:
+    assert callable(sc.tl.dpt)
+    dpt_fn = sc.tl.dpt
+except AssertionError:
+    from scanpy.api.tl import dpt as dpt_fn
+
 
 @wrap_as_panel
 def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_keys=[],
@@ -78,13 +84,18 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
 
     def create_scatterplot(gene, *args, basis=None):
         ixs = np.where(bases == basis)[0][0]
+        is_diffmap = basis == 'diffmap'
+
         if len(args) > 0:
             ixs = np.where(bases == basis)[0][0] * 2
-            comp = (np.array([args[ixs], args[ixs + 1]]) - (basis != 'diffmap')) % adata.obsm[f'X_{basis}'].shape[-1]
+            comp = (np.array([args[ixs], args[ixs + 1]]) - (not is_diffmap)) % adata.obsm[f'X_{basis}'].shape[-1]
         else:
             comp = np.array(components[ixs])  # need to make a copy
-        emb = adata.obsm[f'X_{basis}'][:, comp]
-        comp += basis != 'diffmap'  # naming consistence
+
+        # because diffmap has small range, it iterferes with
+        # the legend created
+        emb = adata.obsm[f'X_{basis}'][:, comp] * (1000 if is_diffmap else 1)
+        comp += not is_diffmap  # naming consistence
 
         basisu = basis.upper()
         x = hv.Dimension('x', label=f'{basisu}{comp[0]}')
@@ -128,6 +139,7 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
     elif subsample == 'density':
         adata = sample_density(adata, int(keep_frac * adata.n_obs), bases[0], seed=seed)
 
+    # from this we'll be getting the expression
     if not iterable(obs_keys):
         obs_keys = [obs_keys]
     obs_keys = skip_or_filter(adata, obs_keys, adata.obs.keys(), dtype=is_numeric,
@@ -300,13 +312,18 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obsm_keys=[],
 
     def create_scatterplot(cond, *args, basis=None):
         ixs = np.where(bases == basis)[0][0]
+        is_diffmap = basis == 'diffmap'
+
         if len(args) > 0:
             ixs = np.where(bases == basis)[0][0] * 2
-            comp = (np.array([args[ixs], args[ixs + 1]]) - (basis != 'diffmap')) % adata.obsm[f'X_{basis}'].shape[-1]
+            comp = (np.array([args[ixs], args[ixs + 1]]) - (not is_diffmap)) % adata.obsm[f'X_{basis}'].shape[-1]
         else:
             comp = np.array(components[ixs])  # need to make a copy
-        emb = adata.obsm[f'X_{basis}'][:, comp]
-        comp += basis != 'diffmap'  # naming consistence
+
+        # because diffmap has small range, it iterferes with
+        # the legend created
+        emb = adata.obsm[f'X_{basis}'][:, comp] * (1000 if is_diffmap else 1)
+        comp += not is_diffmap  # naming consistence
 
         basisu = basis.upper()
         x = hv.Dimension('x', label=f'{basisu}{comp[0]}')
@@ -529,17 +546,21 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
 
     def create_scatterplot(root_cell, gene, basis, *args, typp='expr'):
         ixs = np.where(bases == basis)[0][0]
+        is_diffmap = basis == 'diffmap'
+
         if len(args) > 0:
             ixs = np.where(bases == basis)[0][0] * 2
-            comp = (np.array([args[ixs], args[ixs + 1]]) - (basis != 'diffmap')) % adata.obsm[f'X_{basis}'].shape[-1]
+            comp = (np.array([args[ixs], args[ixs + 1]]) - (not is_diffmap)) % adata.obsm[f'X_{basis}'].shape[-1]
         else:
             comp = np.array(components[ixs])  # need to make a copy
 
-        emb = adata.obsm[f'X_{basis}'][:, comp]
-        comp += basis != 'diffmap'  # naming consistence
+        # because diffmap has small range, it iterferes with
+        # the legend created
+        emb = adata.obsm[f'X_{basis}'][:, comp] * (1000 if is_diffmap else 1)
+        comp += not is_diffmap  # naming consistence
 
         adata.uns['iroot'] = np.where(adata.obs_names == root_cell)[0][0]
-        sc.tl.dpt(adata, *args, **kwargs)
+        dpt_fn(adata, *args, **kwargs)
 
         pseudotime = adata.obs['dpt_pseudotime'].values
         pseudotime[pseudotime == np.inf] = 1
@@ -551,14 +572,14 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
 
         if typp == 'emb_discrete':
             scatter = hv.Scatter({'x': emb[:, 0], 'y': emb[:, 1], 'condition': data},
-                                 kdims=[x, y], vdims='condition')
+                                 kdims=[x, y], vdims='condition').sort('condition')
 
-            scatter_ex = scatter.opts(title=key,
-                                      color='condition',
-                                      xlim=minmax(emb[:, 0]),
-                                      ylim=minmax(emb[:, 1]),
-                                      xlabel=f'{basisu}{comp[0]}',
-                                      ylabel=f'{basisu}{comp[1]}')
+            scatter = scatter.opts(title=key,
+                                   color='condition',
+                                   xlim=minmax(emb[:, 0]),
+                                   ylim=minmax(emb[:, 1]),
+                                   xlabel=f'{basisu}{comp[0]}',
+                                   ylabel=f'{basisu}{comp[1]}')
 
             if is_cat:
                 # we're manually creating legend (for datashade)
@@ -605,7 +626,7 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
                                                                         ylabel='frequence',
                                                                         color='#f2f2f2')
 
-        raise RuntimeError(f'Unknown type `{typp}` for create_plot.')
+        raise RuntimeError(f'Unknown type `{typp}` for `create_scatterplot`.')
 
     if keep_frac is None:
         keep_frac = 0.2
@@ -617,7 +638,6 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
         adata = sample_unif(adata, 30, bases[0])
     elif subsample == 'density':
         adata = sample_density(adata, int(keep_frac * adata.n_obs), bases[0], seed=seed)
-
 
     if genes is None:
         genes = adata.var_names
