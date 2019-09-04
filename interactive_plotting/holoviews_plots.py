@@ -29,9 +29,10 @@ except AssertionError:
 #TODO: DRY
 
 @wrap_as_panel
-def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_keys=[],
-            obsm_keys=[], use_raw=False, subsample='datashade', steps=40, keep_frac=None, lazy_loading=True,
-            sort=True, skip=True, seed=None, cols=2, size=4, cmap=None, plot_height=400, plot_width=400):
+def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_keys=None,
+            obsm_keys=None, use_raw=False, subsample='datashade', steps=40, keep_frac=None, lazy_loading=True,
+            default_obsm_ixs=[0], sort=True, skip=True, seed=None, cols=2, size=4, perc=None, cmap=None,
+            plot_height=400, plot_width=400):
     '''
     Scatter plot for continuous observations.
 
@@ -67,6 +68,10 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
     lazy_loading: Bool, optional (default: `False`)
         only visualize when necessary
         for notebook sharing, consider using `lazy_loading=False`
+    default_obsm_ixs: List[Int], optional (default: `[0]`)
+        indices of 2-D elements in `adata.obsm` to add
+        when `obsm_keys=None`
+        by default adds only 1st column
     sort: Bool, optional (default: `True`)
         whether sort the `genes`, `obs_keys` and `obsm_keys`
         in ascending order
@@ -79,7 +84,10 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
         if `None`, use togglebar
     size: Int, optional (default: `4`)
         size of the glyphs
-        works only when `subsample!='datashade'`
+        works only when `subsample != 'datashade'`
+    perc: List[Float], optional (default: `None`)
+        percentile for colors
+        works only when `subsample != 'datashade'`
     cmap: List[Str], optional (default: `bokeh.palettes.Viridis256`)
         continuous colormap in hex format
     plot_height: Int, optional (default: `400`)
@@ -124,6 +132,7 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
             ix = int(ix)
             data = adata.obsm[gene][:, ix]
 
+        # we need to clip the data as well
         scatter = hv.Scatter({'x': emb[:, 0], 'y': emb[:, 1], 'gene': data},
                              kdims=[x, y], vdims='gene')
 
@@ -131,7 +140,7 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
                             colorbar=True,
                             colorbar_opts={'width': CBW},
                             size=size,
-                            clim=minmax(data),
+                            clim=minmax(data, perc=perc),
                             xlim=minmax(emb[:, 0]),
                             ylim=minmax(emb[:, 1]),
                             xlabel=f'{basisu}{comp[0]}',
@@ -156,20 +165,30 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
         adata = sample_density(adata, int(keep_frac * adata.n_obs), bases[0], seed=seed)
 
     # maybe raw
+    # from this we'll be getting the expression
     adata_mraw = adata.raw if use_raw else adata
 
-    # from this we'll be getting the expression
-    if not iterable(obs_keys):
-        obs_keys = [obs_keys]
-    obs_keys = skip_or_filter(adata, obs_keys, adata.obs.keys(), dtype=is_numeric,
-                              where='obs', skip=skip)
+    if obs_keys is None:
+        obs_keys = skip_or_filter(adata, adata.obs.keys(), adata.obs.keys(), dtype=is_numeric,
+                                  where='obs', skip=True, warn=False)
+    else:
+        if not iterable(obs_keys):
+            obs_keys = [obs_keys]
+        obs_keys = skip_or_filter(adata, obs_keys, adata.obs.keys(), dtype=is_numeric,
+                                  where='obs', skip=skip)
 
-    if not iterable(obsm_keys):
-        obsm_keys = [obsm_keys]
+    if obsm_keys is None:
+        obsm_keys = get_all_obsm_keys(adata, default_obsm_ixs)
+        ignore_after = OBSM_SEP
+        obsm_keys = skip_or_filter(adata, obsm_keys, adata.obsm.keys(), where='obsm',
+                                   dtype=is_numeric, skip=True, warn=False, ignore_after=ignore_after)
+    else:
+        if not iterable(obsm_keys):
+            obsm_keys = [obsm_keys]
 
-    ignore_after = OBSM_SEP if any((OBSM_SEP in obs_key for obs_key in obsm_keys)) else None
-    obsm_keys = skip_or_filter(adata, obsm_keys, adata.obsm.keys(), where='obsm',
-                               dtype=is_numeric, skip=skip, ignore_after=ignore_after)
+        ignore_after = OBSM_SEP if any((OBSM_SEP in obs_key for obs_key in obsm_keys)) else None
+        obsm_keys = skip_or_filter(adata, obsm_keys, adata.obsm.keys(), where='obsm',
+                                   dtype=is_numeric, skip=skip, ignore_after=ignore_after)
 
     if genes is None:
         genes = adata_mraw.var_names
@@ -190,7 +209,7 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
 
     conditions = obs_keys + obsm_keys + genes
     if len(conditions) == 0:
-        warnings.warn(f'No conditions found. Consider speciying `skip=False`.')
+        warnings.warn(f'Nothing to plot.')
         return
 
     if not isinstance(components, np.ndarray):
@@ -267,7 +286,7 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
 @wrap_as_panel
 def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obs_keys=None,
              obsm_keys=None, subsample='datashade', steps=40, keep_frac=None, lazy_loading=True,
-             default_obsm_ixs=[0, 1], sort=True, skip=True, seed=None, legend_loc='top_right', cols=2, size=4,
+             default_obsm_ixs=[0], sort=True, skip=True, seed=None, legend_loc='top_right', cols=2, size=4,
              cmap=None, show_legend=True, plot_height=400, plot_width=400):
     '''
     Scatter plot for categorical observations.
@@ -301,9 +320,6 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obs_keys=None,
     lazy_loading: Bool, optional (default: `False`)
         only visualize when necessary
         for notebook sharing, consider using `lazy_loading=False`
-    default_obsm_ixs: List[Int], optional (default: `[0, 1]`)
-        indices of 2-D elements in `adata.obsm` to add
-        when `obsm_keys=None`
     sort: Bool, optional (default: `True`)
         whether sort the `genes`, `obs_keys` and `obsm_keys`
         in ascending order
@@ -430,7 +446,7 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obs_keys=None,
     conditions = obs_keys + obsm_keys
 
     if len(conditions) == 0:
-        warnings.warn(f'No conditions found. Consider speciying `skip=False`.')
+        warnings.warn('Nothing to plot.')
         return
 
     if not isinstance(components, np.ndarray):
@@ -529,7 +545,7 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obs_keys=None,
 def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
         subsample='datashade', steps=40, use_raw=False, keep_frac=None,
         sort=True, skip=True, seed=None, show_legend=True,
-        legend_loc='top_right', size=4, cat_cmap=None, cont_cmap=None,
+        legend_loc='top_right', size=4, perc=None, cat_cmap=None, cont_cmap=None,
         plot_height=400, plot_width=400, *args, **kwargs):
     '''
     Scatter plot for categorical observations.
@@ -580,6 +596,9 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
     size: Int, optional (default: `4`)
         size of the glyphs
         works only when `subsample!='datashade'`
+    perc: List[Float], optional (default: `None`)
+        percentile for colors
+        works only when `subsample != 'datashade'`
     cat_cmap: List[Str], optional (default: `datashader.colors.Sets1to3`)
         categorical colormap in hex format
         used when `key` is categorical variable
@@ -635,7 +654,7 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
                 return scatter.opts(cmap=cat_cmap, show_legend=False)
 
             return scatter.opts(colorbar=True, colorbar_opts={'width': CBW},
-                                cmap=cont_cmap, clim=minmax(data))
+                                cmap=cont_cmap, clim=minmax(data, perc=perc))
 
         adata.uns['iroot'] = np.where(adata.obs_names == root_cell)[0][0]
         dpt_fn(adata, *args, **kwargs)
@@ -653,7 +672,7 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
                                 colorbar=True,
                                 colorbar_opts={'width': CBW},
                                 size=size,
-                                clim=minmax(pseudotime),
+                                clim=minmax(pseudotime, perc=perc),
                                 xlim=minmax(emb[:, 0]),
                                 ylim=minmax(emb[:, 1]),
                                 xlabel=f'{basisu}{comp[0]}',
@@ -677,7 +696,7 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
                 return scatter_expr.opts(cmap=cat_cmap, show_legend=False)
 
             return scatter_expr.opts(colorbar=True, colorbar_opts={'width': CBW},
-                                     cmap=cont_cmap, clim=minmax(data))
+                                     cmap=cont_cmap, clim=minmax(data, perc=perc))
 
         if typp == 'hist':
             return hv.Histogram(np.histogram(pseudotime, bins=20)).opts(xlabel='pseudotime',

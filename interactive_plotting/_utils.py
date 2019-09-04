@@ -94,7 +94,7 @@ def is_categorical(obj):
     return obj.dtype.name == 'category'
 
 
-def minmax(component, is_sorted=False):
+def minmax(component, perc=None, is_sorted=False):
     '''
     Get the minimum and maximum value of an array.
 
@@ -102,6 +102,8 @@ def minmax(component, is_sorted=False):
     --------
     component: Union[np.ndarray, List, Tuple]
         1-D array
+    perc: Union[List[Float], Tuple[Float]]
+        clip the values by the percentiles
     is_sorted: Bool, optional (default: `False`)
         whether the component is already sorted,
         if `True`, min and max are the first and last
@@ -112,6 +114,9 @@ def minmax(component, is_sorted=False):
     min_max: Tuple[Float, Float]
         minimum and maximum values that are not NaN
     '''
+    if perc is not None:
+        assert len(perc) == 2, 'Percentile must be of length 2.'
+        component = np.clip(component, *np.percentile(component, sorted(perc)))
 
     return (np.nanmin(component), np.nanmax(component)) if not is_sorted else (component[0], component[-1])
 
