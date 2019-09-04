@@ -330,6 +330,10 @@ def wrap_as_col(fn):
         function which return object of type `pn.Column`
     '''
 
+    def chunkify(l, n):
+        for i in range(0, len(l), n):
+            yield l[i: i + n]
+
     @wraps(fn)
     def inner(*args, **kwargs):
         reverse = kwargs.pop('reverse', True)
@@ -341,7 +345,8 @@ def wrap_as_col(fn):
         if reverse:
             res.reverse()
 
-        return pn.Column(pn.Row(*res[0]), res[1])
+        widgets = list(map(lambda w: pn.Row(*w), filter(len, chunkify(res[0], 3))))
+        return pn.Column(*(widgets + [res[1]]))
 
     return inner
 

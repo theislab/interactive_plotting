@@ -574,7 +574,7 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obs_keys=None,
 def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
         subsample='datashade', steps=40, use_raw=False, keep_frac=None,
         sort=True, skip=True, seed=None, show_legend=True,
-        legend_loc='top_right', size=4, perc=None, cat_cmap=None, cont_cmap=None,
+        legend_loc='top_right', size=4, perc=None, show_perc=True, cat_cmap=None, cont_cmap=None,
         plot_height=400, plot_width=400, *args, **kwargs):
     '''
     Scatter plot for categorical observations.
@@ -626,7 +626,10 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
         size of the glyphs
         works only when `subsample!='datashade'`
     perc: List[Float], optional (default: `None`)
-        percentile for colors
+        percentile for colors when `key` refers to continous observation
+        works only when `subsample != 'datashade'`
+    show_perc: Bool, optional (default: `True`)
+        show percentile slider when `key` refers to continous observation
         works only when `subsample != 'datashade'`
     cat_cmap: List[Str], optional (default: `datashader.colors.Sets1to3`)
         categorical colormap in hex format
@@ -647,7 +650,7 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
         holoviews plot wrapped in `panel.Column`
     '''
 
-    def create_scatterplot(root_cell, gene, basis, *args, typp='expr'):
+    def create_scatterplot(root_cell, gene, basis, perc_low, perc_high, *args, typp='expr'):
         ixs = np.where(bases == basis)[0][0]
         is_diffmap = basis == 'diffmap'
 
@@ -656,6 +659,13 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
             comp = (np.array([args[ixs], args[ixs + 1]]) - (not is_diffmap)) % adata.obsm[f'X_{basis}'].shape[-1]
         else:
             comp = np.array(components[ixs])  # need to make a copy
+
+        if perc_low is not None and perc_high is not None:
+            if perc_low > perc_high:
+                perc_low, perc_high = perc_high, perc_low
+            perc = [perc_low, perc_high]
+        else:
+            perc = None
 
         # because diffmap has small range, it iterferes with
         # the legend created
@@ -740,6 +750,12 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
     if isinstance(bases, str):
         bases = [bases]
 
+    if perc is None:
+        perc = [None, None]
+    assert len(perc) == 2, f'Percentile must be of length 2, found `{len(perc)}`.'
+    if all(map(lambda p: p is not None, perc)):
+        perc = sorted(perc)
+
     assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
     assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
 
@@ -798,6 +814,7 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
     kdims = [hv.Dimension('Cell', values=adata.obs_names),
              hv.Dimension('Gene', values=genes),
              hv.Dimension('Basis', values=bases)]
+    cs = lambda cell, gene, basis, *args, **kwargs: create_scatterplot(cell, gene, basis, perc[0], perc[1], *args, **kwargs)
 
     data, is_cat = get_data(adata, key)
     if is_cat:
@@ -810,11 +827,17 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
         aggregator = ds.mean
         cmap = cont_cmap
         legend = None
+        if show_perc and subsample != 'datashade':
+            kdims += [
+                hv.Dimension('Percentile (lower)', range=(0, 100), step=0.1, type=float, default=0 if perc[0] is None else perc[0]),
+                hv.Dimension('Percentile (upper)', range=(0, 100), step=0.1, type=float, default=100 if perc[1] is None else perc[1])
+            ]
+            cs = create_scatterplot
 
-    emb = hv.DynamicMap(partial(create_scatterplot, typp='emb'), kdims=kdims)
-    emb_d = hv.DynamicMap(partial(create_scatterplot, typp='emb_discrete'), kdims=kdims)
-    expr = hv.DynamicMap(partial(create_scatterplot, typp='expr'), kdims=kdims)
-    hist = hv.DynamicMap(partial(create_scatterplot, typp='hist'), kdims=kdims)
+    emb = hv.DynamicMap(partial(cs, typp='emb'), kdims=kdims)
+    emb_d = hv.DynamicMap(partial(cs, typp='emb_discrete'), kdims=kdims)
+    expr = hv.DynamicMap(partial(cs, typp='expr'), kdims=kdims)
+    hist = hv.DynamicMap(partial(cs, typp='hist'), kdims=kdims)
 
     if subsample == 'datashade':
         emb = dynspread(datashade(emb, aggregator=ds.mean('pseudotime'), cmap=cont_cmap,
