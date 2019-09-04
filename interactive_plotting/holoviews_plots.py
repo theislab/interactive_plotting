@@ -31,8 +31,8 @@ except AssertionError:
 @wrap_as_panel
 def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_keys=None,
             obsm_keys=None, use_raw=False, subsample='datashade', steps=40, keep_frac=None, lazy_loading=True,
-            default_obsm_ixs=[0], sort=True, skip=True, seed=None, cols=2, size=4, perc=None, cmap=None,
-            plot_height=400, plot_width=400):
+            default_obsm_ixs=[0], sort=True, skip=True, seed=None, cols=2, size=4,
+            perc=None, show_perc=True, cmap=None, plot_height=400, plot_width=400):
     '''
     Scatter plot for continuous observations.
 
@@ -86,7 +86,11 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
         size of the glyphs
         works only when `subsample != 'datashade'`
     perc: List[Float], optional (default: `None`)
-        percentile for colors
+        percentile for colors 
+        useful when `lazy_loading = False`
+        works only when `subsample != 'datashade'`
+    show_perc: Bool, optional (default: `True`)
+        show percentile slider when `lazy_loading = True`
         works only when `subsample != 'datashade'`
     cmap: List[Str], optional (default: `bokeh.palettes.Viridis256`)
         continuous colormap in hex format
@@ -101,7 +105,7 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
         holoviews plot wrapped in `panel.panel`
     '''
 
-    def create_scatterplot(gene, *args, basis=None):
+    def create_scatterplot(gene, perc_low, perc_high, *args, basis=None):
         ixs = np.where(bases == basis)[0][0]
         is_diffmap = basis == 'diffmap'
 
@@ -110,6 +114,13 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
             comp = (np.array([args[ixs], args[ixs + 1]]) - (not is_diffmap)) % adata.obsm[f'X_{basis}'].shape[-1]
         else:
             comp = np.array(components[ixs])  # need to make a copy
+
+        if perc_low is not None and perc_high is not None:
+            if perc_low > perc_high:
+                perc_low, perc_high = perc_high, perc_low
+            perc = [perc_low, perc_high]
+        else:
+            perc = None
 
         # because diffmap has small range, it iterferes with
         # the legend created
@@ -132,6 +143,8 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
             ix = int(ix)
             data = adata.obsm[gene][:, ix]
 
+        data = np.array(data, dtype=np.float64)
+
         # we need to clip the data as well
         scatter = hv.Scatter({'x': emb[:, 0], 'y': emb[:, 1], 'gene': data},
                              kdims=[x, y], vdims='gene')
@@ -146,9 +159,15 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
                             xlabel=f'{basisu}{comp[0]}',
                             ylabel=f'{basisu}{comp[1]}')
 
-    def _cs(basis, gene, *args):
+    def _create_scatterplot_nl(basis, gene, perc_low, perc_high, *args):
         # arg switching
-        return create_scatterplot(gene, *args, basis=basis)
+        return create_scatterplot(gene, perc_low, perc_high, *args, basis=basis)
+
+    if perc is None:
+        perc = [None, None]
+    assert len(perc) == 2, f'Percentile must be of length 2, found `{len(perc)}`.'
+    if all(map(lambda p: p is not None, perc)):
+        perc = sorted(perc)
 
     if keep_frac is None:
         keep_frac = 0.2
@@ -249,10 +268,20 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
         lims['y'][basis] = minmax(emb[:, 1])
 
     kdims = [hv.Dimension('Basis', values=bases),
-             hv.Dimension('Condition', values=conditions)]
+             hv.Dimension('Condition', values=conditions),
+             hv.Dimension('Percentile (lower)', range=(0, 100), step=0.1, type=float, default=0 if perc[0] is None else perc[0]),
+             hv.Dimension('Percentile (upper)', range=(0, 100), step=0.1, type=float, default=100 if perc[1] is None else perc[1])]
 
+    cs = create_scatterplot
+    _cs = _create_scatterplot_nl
+    if not show_perc or subsample == 'datashade' or not lazy_loading:
+        kdims = kdims[:2]
+        cs = lambda gene, *args, **kwargs: create_scatterplot(gene, perc[0], perc[1], *args, **kwargs)
+        _cs = lambda basis, gene, *args, **kwargs: _create_scatterplot_nl(basis, gene, perc[0], perc[1], *args, **kwargs)
+
+    # TODO: test lazy loading
     if not lazy_loading:
-        dynmaps = [hv.HoloMap({(g, b):create_scatterplot(g, basis=b) for g in conditions for b in bases}, kdims=kdims[::-1])]
+        dynmaps = [hv.HoloMap({(g, b):cs(g, basis=b) for g in conditions for b in bases}, kdims=kdims[::-1])]
     else:
         for basis, comp in zip(bases, components):
             kdims.append(hv.Dimension(f'{basis.upper()}[X]',
@@ -264,7 +293,7 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
         if cols is None:
             dynmaps = [hv.DynamicMap(_cs, kdims=kdims)]
         else:
-            dynmaps = [hv.DynamicMap(partial(create_scatterplot, basis=basis), kdims=kdims[1:]) for basis in bases]
+            dynmaps = [hv.DynamicMap(partial(cs, basis=basis), kdims=kdims[1:]) for basis in bases]
 
     if subsample == 'datashade':
         dynmaps = [dynspread(datashade(d, aggregator=ds.mean('gene'), color_key='gene',
