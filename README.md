@@ -20,6 +20,9 @@ We recommend checking out the [tutorial notebook](./notebooks/interactive_plotti
 
 In your Jupyter Notebook, execute the following lines:
 ```python
+import holoviews as hv  # needed for scatter, scatterc and dpt
+hv.extension('bokeh')
+
 import interactive_plotting as ipl  
 
 from bokeh.io import output_notebook

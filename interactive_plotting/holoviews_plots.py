@@ -824,6 +824,7 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
         legend = hv.NdOverlay({c: hv.Points([0, 0], label=str(c)).opts(size=0, color=color)
                                for c, color in zip(data.categories, cat_cmap)})
     else:
+        data = np.array(data, dtype=np.float64)
         aggregator = ds.mean
         cmap = cont_cmap
         legend = None
