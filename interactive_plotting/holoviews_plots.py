@@ -31,7 +31,7 @@ except AssertionError:
 @wrap_as_panel
 def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_keys=None,
             obsm_keys=None, use_raw=False, subsample='datashade', steps=40, keep_frac=None, lazy_loading=True,
-            default_obsm_ixs=[0], sort=True, skip=True, seed=None, cols=2, size=4,
+            default_obsm_ixs=[0], sort=True, skip=True, seed=None, cols=None, size=4,
             perc=None, show_perc=True, cmap=None, plot_height=400, plot_width=400):
     '''
     Scatter plot for continuous observations.
@@ -315,7 +315,7 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
 @wrap_as_panel
 def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obs_keys=None,
              obsm_keys=None, subsample='datashade', steps=40, keep_frac=None, lazy_loading=True,
-             default_obsm_ixs=[0], sort=True, skip=True, seed=None, legend_loc='top_right', cols=2, size=4,
+             default_obsm_ixs=[0], sort=True, skip=True, seed=None, legend_loc='top_right', cols=None, size=4,
              cmap=None, show_legend=True, plot_height=400, plot_width=400):
     '''
     Scatter plot for categorical observations.
@@ -358,7 +358,7 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obs_keys=None,
         random seed, used when `subsample='decimate'``
     legend_loc: Str, optional (default: `top_right`)
         position of the legend
-    cols: Int, optional (default: `2`)
+    cols: Int, optional (default: `None`)
         number of columns when plotting bases
         if `None`, use togglebar
     size: Int, optional (default: `4`)
@@ -619,7 +619,7 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
         whether to show legend
     legend_loc: Str, optional (default: `top_right`)
         position of the legend
-    cols: Int, optional (default: `2`)
+    cols: Int, optional (default: `None`)
         number of columns when plotting bases
         if `None`, use togglebar
     size: Int, optional (default: `4`)
@@ -811,7 +811,7 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
     if cont_cmap is None:
         cont_cmap = Viridis256
 
-    kdims = [hv.Dimension('Cell', values=adata.obs_names),
+    kdims = [hv.Dimension('Root cell', values=adata.obs_names),
              hv.Dimension('Gene', values=genes),
              hv.Dimension('Basis', values=bases)]
     cs = lambda cell, gene, basis, *args, **kwargs: create_scatterplot(cell, gene, basis, perc[0], perc[1], *args, **kwargs)

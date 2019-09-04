@@ -16,6 +16,7 @@ pip install -e .
 
 ## Getting Started
 We recommend checking out the [tutorial notebook](./notebooks/interactive_plotting_tutorial.ipynb).
+```ipl.scatter```, ```ipl.scatterc``` and ```ipl.dpt``` can handle large number of cells (100K+).
 
 In your Jupyter Notebook, execute the following lines:
 ```python
@@ -27,6 +28,27 @@ output_notebook()
 
 ## Examples
 Here are some exemplary figures for each of the plotting functions.
+```python
+ipt.scatter
+```
+![link plot](resources/images/scatter_cont.png?raw=true "Scatterplot (continous)")
+
+---
+
+```python
+ipt.scatterc
+```
+![link plot](resources/images/scatter_cat.png?raw=true "Scatterplot (categorical)")
+
+---
+
+```python
+ipt.dpt
+```
+![link plot](resources/images/dpt_plot.png?raw=true "DPT plot")
+
+---
+
 ```python
 ipl.link_plot
    ``` 
