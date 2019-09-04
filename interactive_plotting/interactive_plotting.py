@@ -316,57 +316,6 @@ def _smooth_expression(x, y, n_points=100, time_span=[None, None], mode='gp', ke
     raise ValueError(f'Uknown type: `{type}`.')
 
 
-def _compute_dist(x_obs, x_theo):
-    """
-    Utility function to compute distance a between point cloud and curve.
-
-    Params
-    --------
-    x_obs: np.array
-        observed data
-    x_theo: np.array
-        theoretical data/curve
-
-    Returns 
-    --------
-    score:
-        a distance measure
-    """
-
-    from fastdtw import fastdtw
-    score, path = fastdtw(x_obs, x_theo, dist=2)
-
-    return score
-
-
-def _shift_scale(x_obs, x_theo, fit_intercept=False):
-    """Utility function to shift and scale the integrated velocities.
-
-    Params:
-    --------
-    x_obs: np.array
-        observed data
-    x_theo: np.array
-        theoretical data/curve
-    fit_intercept: bool, optional (default: `False`)
-        whether to fit intercept for the linear regression
-
-    Returns
-    --------
-    coefficients, intercept
-        coefficients and intercept of a linear model
-    """
-
-    # find the best possible scaling factor using simple lin reg
-    # this accounts for not knowing beta
-    from sklearn.linear_model import LinearRegression
-
-    reg = LinearRegression(fit_intercept=fit_intercept)
-    reg.fit(x_obs[:, None], x_theo)
-
-    return reg.coef_, reg.intercept_
-
-
 def _create_gt_fig(adatas, dataframe, color_key, title, color_mapper, show_cont_annot=False,
                    use_raw=True, genes=[], legend_loc='top_right',
                    plot_width=None, plot_height=None):
