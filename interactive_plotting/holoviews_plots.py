@@ -282,7 +282,6 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
         cs = lambda gene, *args, **kwargs: create_scatterplot(gene, perc[0], perc[1], *args, **kwargs)
         _cs = lambda basis, gene, *args, **kwargs: _create_scatterplot_nl(basis, gene, perc[0], perc[1], *args, **kwargs)
 
-    # TODO: test lazy loading
     if not lazy_loading:
         dynmaps = [hv.HoloMap({(g, b):cs(g, basis=b) for g in conditions for b in bases}, kdims=kdims[::-1])]
     else:
@@ -530,7 +529,8 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
                                 cmap if subsample == 'datashade' else adata.uns.get(color_key, cmap)))
 
     if not lazy_loading:
-        dynmap = hv.HoloMap({(c, b):create_scatterplot(c, b) for c in conditions for b in bases}, kdims=kdims)
+        # have to wrap because of the *args
+        dynmaps = [hv.HoloMap({(c, b):create_scatterplot(c, basis=b) for c in conditions for b in bases}, kdims=kdims[::-1])]
     else:
         for basis, comp in zip(bases, components):
             kdims.append(hv.Dimension(f'{basis.upper()}[X]',

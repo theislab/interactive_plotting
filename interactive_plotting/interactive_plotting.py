@@ -7,7 +7,6 @@ from scipy.sparse import issparse
 from scipy.spatial import distance_matrix, ConvexHull
 
 from functools import reduce
-# from collections.abc import Iterable
 from collections import defaultdict
 from itertools import product
 
@@ -23,7 +22,7 @@ import matplotlib
 import bokeh
 
 
-# from .utils import sample_unif, sample_density
+from ._utils import sample_unif, sample_density
 from bokeh.plotting import figure, show
 from bokeh.models import ColumnDataSource, Slider, HoverTool, ColorBar, \
         Patches, Legend, CustomJS, TextInput, LabelSet, Select 
@@ -1026,7 +1025,7 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_genes=10,
 
 
 def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
-             subsample=None, step_size=30, sample_size=500,
+             subsample=None, steps=[40, 40], sample_size=500,
              distance=2, cutoff=True, highlight_only=None, palette=None,
              show_legend=False, legend_loc='top_right', plot_width=None, plot_height=None):
     """
@@ -1050,7 +1049,7 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
     subsample: str, optional (default: `None`)
         subsample strategy to use when there are too many cells
         possible values are: `"density"`, `"uniform"`, `None`
-    step_size: int; tuple(int), optional (default: `30`)
+    steps: int; list(int), optional (default: `[40, 40]`)
         number of steps in each direction when using `subsample="uniform"`
     sample_size: int, optional (default: `500`)
         number of cells to sample based on their density in the respective embedding
@@ -1085,7 +1084,7 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
     assert key in adata.obs.keys(), f'`{key}` not found in `adata.obs`.'
 
     if subsample == 'uniform':
-        adata = sample_unif(adata, step_size, bases[0])
+        adata = sample_unif(adata, steps, bases[0])
     elif subsample == 'density':
         adata = sample_density(adata, sample_size, bases[0], seed=seed)
     elif subsample is not None:
@@ -1136,8 +1135,7 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
     df['hl_key'] = list(adata.obs[highlight_only]) if highlight_only is not None else 0
     df[key] = list(map(str, adata.obs[key]))
 
-    start_ix = df.columns[2]
-
+    start_ix = '0'  # our root cell
     ds = ColumnDataSource(df)
     mapper = linear_cmap(field_name='hl_color', palette=palette,
                          low=df[start_ix].min(), high=df[start_ix].max())
