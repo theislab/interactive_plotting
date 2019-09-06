@@ -6,10 +6,11 @@ from inspect import signature
 from sklearn.neighbors import NearestNeighbors
 
 import numpy as np
-import itertools
 import pandas as pd
-import warnings
 import panel as pn
+import re
+import itertools
+import warnings
 
 
 NO_SUBSAMPLE = (None, 'none')
@@ -21,6 +22,7 @@ HOLOMAP_THRESH = 50
 OBSM_SEP = ':'
 
 CBW = 10  # colorbar width
+BASIS_PAT = re.compile('^X_(.+)')
 
 
 def iterable(obj):
@@ -447,7 +449,7 @@ def sample_density(adata, size, basis='umap', key=None, seed=None):
 
     if key is not None:
         density_key = f'{basis}_density_{key}'
-        assert density_key in adata.obs.keys(), f'`{density_key}` not found in `adata.obs`. Try running `sc.tl.embedding_density` with `groups="{key}"`.'
+        assert density_key in adata.obs.keys(), f'`{density_key}` not found in `adata.obs`. Try running `sc.tl.embedding_density` with `groups="{key}"` for basis=`{basis}`.'
         # normalize, flatten the index
         tmp = pd.DataFrame(adata.obs.groupby(key).apply(lambda df: np.exp(df[density_key]) / np.sum(np.exp(df[density_key])))).reset_index()
         # cleanup before join
@@ -458,7 +460,7 @@ def sample_density(adata, size, basis='umap', key=None, seed=None):
         tmp = adata.obs.join(tmp, on='index')
         assert all(tmp[key] == tmp[f'{key}_test']), 'something went terribly wrong when merging fataframes'
     else:
-        assert f'{basis}_density' in adata.obs.keys(), f'`{basis}_density` not found in `adata.obs`. Try running `sc.tl.embedding_density`.'
+        assert f'{basis}_density' in adata.obs.keys(), f'`{basis}_density` not found in `adata.obs`. Try running `sc.tl.embedding_density` for basis=`{basis}`.'
         tmp = pd.DataFrame(np.exp(adata.obs[f'{basis}_density']) / np.sum(np.exp(adata.obs[f'{basis}_density'])))
         tmp.rename(columns={f'{basis}_density': 'prob_density'}, inplace=True)
 

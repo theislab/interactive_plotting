@@ -12,13 +12,12 @@ from pandas.core.indexes.base import Index
 from holoviews.operation.datashader import datashade, shade, dynspread, rasterize, spread
 from holoviews.operation import decimate
 
-from holoviews import opts
-
 import scanpy as sc
 import numpy as np
 import pandas as pd
 import holoviews as hv
 import datashader as ds
+
 
 try:
     assert callable(sc.tl.dpt)
@@ -29,7 +28,7 @@ except AssertionError:
 #TODO: DRY
 
 @wrap_as_panel
-def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_keys=None,
+def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
             obsm_keys=None, use_raw=False, subsample='datashade', steps=40, keep_frac=None, lazy_loading=True,
             default_obsm_ixs=[0], sort=True, skip=True, seed=None, cols=None, size=4,
             perc=None, show_perc=True, cmap=None, plot_height=400, plot_width=400):
@@ -43,14 +42,14 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
     genes: List[Str], optional (default: `None`)
         list of genes to add for visualization
         if `None`, use `adata.var_names`
-    bases: Union[Str, List[Str]], optional (default: `['umap', 'pca']`)
-        bases in `adata.obsm`
+    bases: Union[Str, List[Str]], optional (default: `None`)
+        bases in `adata.obsm`, if `None`, get all of them
     components: Union[List[Int], List[List[Int]]], optional (default: `[1, 2]`)
         components of specified `bases`
         if it's of type `List[Int]`, all the bases have use the same components
-    obs_keys: List[Str], optional (default: `[]`)
+    obs_keys: List[Str], optional (default: `None`)
         keys of categorical observations in `adata.obs`
-    obsm_keys: List[Str], optional (default: `[]`)
+    obsm_keys: List[Str], optional (default: `None`)
         keys of categorical observations in `adata.obsm`
     use_raw: Bool, optional (default: `False`)
         use `adata.raw` for gene expression levels
@@ -172,8 +171,12 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
     if keep_frac is None:
         keep_frac = 0.2
 
-    if isinstance(bases, str):
-        bases = [bases]
+    if bases is None:
+        bases = np.ravel(sorted(filter(len, map(BASIS_PAT.findall, adata.obsm.keys()))))
+    elif isinstance(bases, str):
+        bases = np.array([bases])
+    elif not isinstance(bases, np.ndarray):
+        bases = np.array(bases)
 
     assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
     assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
@@ -313,7 +316,7 @@ def scatter(adata, genes=None, bases=['umap', 'pca'], components=[1, 2], obs_key
 
 
 @wrap_as_panel
-def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obs_keys=None,
+def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
              obsm_keys=None, subsample='datashade', steps=40, keep_frac=None, lazy_loading=True,
              default_obsm_ixs=[0], sort=True, skip=True, seed=None, legend_loc='top_right', cols=None, size=4,
              cmap=None, show_legend=True, plot_height=400, plot_width=400):
@@ -324,8 +327,8 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obs_keys=None,
     --------
     adata: anndata.Anndata
         anndata object
-    bases: List[Str], optional (default: `['umap', 'pca']`)
-        bases in `adata.obsm`
+    bases: Union[Str, List[Str]], optional (default: `None`)
+        bases in `adata.obsm`, if `None`, get all of them
     components: Union[List[Int], List[List[Int]]], optional (default: `[1, 2]`)
         components of specified `bases`
         if it's of type `List[Int]`, all the bases have use the same components
@@ -433,8 +436,12 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obs_keys=None,
     if keep_frac is None:
         keep_frac = 0.2
 
-    if isinstance(bases, str):
-        bases = [bases]
+    if bases is None:
+        bases = np.ravel(sorted(filter(len, map(BASIS_PAT.findall, adata.obsm.keys()))))
+    elif isinstance(bases, str):
+        bases = np.array([bases])
+    elif not isinstance(bases, np.ndarray):
+        bases = np.array(bases)
 
     assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
     assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
@@ -485,9 +492,6 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obs_keys=None,
 
     assert components.ndim == 2, f'Only `2` dimensional components are supported, got `{components.ndim}`.'
     assert components.shape[-1] == 2, f'Components\' second dimension must be of size `2`, got `{components.shape[-1]}`.'
-
-    if not isinstance(bases, np.ndarray):
-        bases = np.array(bases)
 
     assert components.shape[0] == len(bases), f'Expected #components == `{len(bases)}`, got `{components.shape[0]}`.'
     assert np.all(components >= 0), f'Currently, only positive indices are supported, found `{list(map(list, components))}`.'
@@ -571,7 +575,7 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obs_keys=None,
 
 
 @wrap_as_col
-def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
+def dpt(adata, key, genes=None, bases=None, components=[1, 2],
         subsample='datashade', steps=40, use_raw=False, keep_frac=None,
         sort=True, skip=True, seed=None, show_legend=True,
         root_cell_hl=True, root_cell_bbox=True, root_cell_size=None, root_cell_color='orange',
@@ -591,8 +595,8 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
     genes: List[Str], optional (default: `None`)
         list of genes to add for visualization
         if `None`, use `adata.var_names`
-    bases: Union[Str, List[Str]], optional (default: `['umap', 'pca']`)
-        bases in `adata.obsm`
+    bases: Union[Str, List[Str]], optional (default: `None`)
+        bases in `adata.obsm`, if `None`, get all of them
     components: Union[List[Int], List[List[Int]]], optional (default: `[1, 2]`)
         components of specified `bases`
         if it's of type `List[Int]`, all the bases have use the same components
@@ -715,7 +719,7 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
 
             root_cell_scatter = hv.Scatter({'x': emb[rid, 0], 'y': emb[rid, 1]}).opts(color=root_cell_color, size=root_cell_size)
             if root_cell_bbox:
-                root_cell_scatter *= hv.Bounds((rx - dx, ry - dy, rx + dx, ry + dy)).opts(line_width=4, color=root_cell_color)
+                root_cell_scatter *= hv.Bounds((rx - dx, ry - dy, rx + dx, ry + dy)).opts(line_width=4, color=root_cell_color).opts(axiswise=True, framewise=True)
 
             return root_cell_scatter
 
@@ -770,14 +774,22 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
 
         raise RuntimeError(f'Unknown type `{typp}` for `create_scatterplot`.')
 
+    # we copy beforehand
+    if kwargs.pop('copy', False):
+        adata = adata.copy()
+
     if keep_frac is None:
         keep_frac = 0.2
 
     if root_cell_size is None:
         root_cell_size = size * 2
 
-    if isinstance(bases, str):
-        bases = [bases]
+    if bases is None:
+        bases = np.ravel(sorted(filter(len, map(BASIS_PAT.findall, adata.obsm.keys()))))
+    elif isinstance(bases, str):
+        bases = np.array([bases])
+    elif not isinstance(bases, np.ndarray):
+        bases = np.array(bases)
 
     if perc is None:
         perc = [None, None]
@@ -888,7 +900,7 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
         emb, emb_d, expr = (decimate(d, max_samples=int(adata.n_obs * keep_frac)) for d in (emb, emb_d, expr))
 
     if root_cell_hl:
-        emb *= root_cell
+        emb *= root_cell  # emb * root_cell.opts(axiswise=True, framewise=True)
 
     emb = emb.opts(axiswise=False, framewise=True, frame_height=plot_height, frame_width=plot_width)
     expr = expr.opts(axiswise=True, framewise=True, frame_height=plot_height, frame_width=plot_width)
