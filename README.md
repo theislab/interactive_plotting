@@ -34,21 +34,21 @@ Here are some exemplary figures for each of the plotting functions.
 ```python
 ipt.scatter
 ```
-![link plot](resources/images/scatter_cont.png?raw=true "Scatterplot (continous)")
+![Scatterplot (cont)](resources/images/scatter_cont.png?raw=true "Scatterplot (continous)")
 
 ---
 
 ```python
 ipt.scatterc
 ```
-![link plot](resources/images/scatter_cat.png?raw=true "Scatterplot (categorical)")
+![Scatterplot (cat)](resources/images/scatter_cat.png?raw=true "Scatterplot (categorical)")
 
 ---
 
 ```python
 ipt.dpt
 ```
-![link plot](resources/images/dpt_plot.png?raw=true "DPT plot")
+![DPT plot](resources/images/dpt_plot.png?raw=true "DPT plot")
 
 ---
 
