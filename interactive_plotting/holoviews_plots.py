@@ -574,6 +574,7 @@ def scatterc(adata, bases=['umap', 'pca'], components=[1, 2], obs_keys=None,
 def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
         subsample='datashade', steps=40, use_raw=False, keep_frac=None,
         sort=True, skip=True, seed=None, show_legend=True,
+        root_cell_hl=True, root_cell_bbox=True, root_cell_size=None, root_cell_color='orange',
         legend_loc='top_right', size=4, perc=None, show_perc=True, cat_cmap=None, cont_cmap=None,
         plot_height=400, plot_width=400, *args, **kwargs):
     '''
@@ -637,6 +638,14 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
     cont_cmap: List[Str], optional (default: `bokeh.palettes.Viridis256`)
         continuous colormap in hex format
         used when `key` is continuous variable
+    root_cell_hl: Bool, optional (default: `True`)
+        highlight the root cell
+    root_cell_bbox: Bool, optional (default: `True`)
+        show bounding box around the root cell
+    root_cell_size: Int, optional (default `None`)
+        size of the root cell, if `None`, it's `size * 2`
+    root_cell_color: Str, optional (default: `red`)
+        color of the root cell, can be in hex format
     plot_height: Int, optional (default: `400`)
         height of the plot in pixels
     plot_width: Int, optional (default: `400`)
@@ -650,7 +659,7 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
         holoviews plot wrapped in `panel.Column`
     '''
 
-    def create_scatterplot(root_cell, gene, basis, perc_low, perc_high, *args, typp='expr'):
+    def create_scatterplot(root_cell, gene, basis, perc_low, perc_high, *args, typp='expr', ret_hl=False):
         ixs = np.where(bases == basis)[0][0]
         is_diffmap = basis == 'diffmap'
 
@@ -675,6 +684,8 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
         basisu = basis.upper()
         x = hv.Dimension('x', label=f'{basisu}{comp[0]}')
         y = hv.Dimension('y', label=f'{basisu}{comp[1]}')
+        xmin, xmax = minmax(emb[:, 0])
+        ymin, ymax = minmax(emb[:, 1])
 
         if typp == 'emb_discrete':
             scatter = hv.Scatter({'x': emb[:, 0], 'y': emb[:, 1], 'condition': data},
@@ -682,8 +693,8 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
 
             scatter = scatter.opts(title=key,
                                    color='condition',
-                                   xlim=minmax(emb[:, 0]),
-                                   ylim=minmax(emb[:, 1]),
+                                   xlim=(xmin, xmax),
+                                   ylim=(ymin, ymax),
                                    size=size,
                                    xlabel=f'{basisu}{comp[0]}',
                                    ylabel=f'{basisu}{comp[1]}')
@@ -695,7 +706,20 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
             return scatter.opts(colorbar=True, colorbar_opts={'width': CBW},
                                 cmap=cont_cmap, clim=minmax(data, perc=perc))
 
-        adata.uns['iroot'] = np.where(adata.obs_names == root_cell)[0][0]
+        rid = np.where(adata.obs_names == root_cell)[0][0]
+        adata.uns['iroot'] = rid
+
+        if typp == 'root_cell_hl':
+            dx, dy = (xmax - xmin) / 25, (ymax - ymin) / 25
+            rx, ry = emb[rid, 0], emb[rid, 1]
+
+            root_cell_scatter = hv.Scatter({'x': emb[rid, 0], 'y': emb[rid, 1]}).opts(color=root_cell_color, size=root_cell_size)
+            if root_cell_bbox:
+                root_cell_scatter *= hv.Bounds((rx - dx, ry - dy, rx + dx, ry + dy)).opts(line_width=4, color=root_cell_color)
+
+            return root_cell_scatter
+
+
         dpt_fn(adata, *args, **kwargs)
 
         pseudotime = adata.obs['dpt_pseudotime'].values
@@ -703,6 +727,7 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
         pseudotime[pseudotime == -np.inf] = 0
 
         if typp == 'emb':
+
             scatter = hv.Scatter({'x': emb[:, 0], 'y': emb[:, 1], 'pseudotime': pseudotime},
                                  kdims=[x, y], vdims='pseudotime')
 
@@ -712,16 +737,17 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
                                 colorbar_opts={'width': CBW},
                                 size=size,
                                 clim=minmax(pseudotime, perc=perc),
-                                xlim=minmax(emb[:, 0]),
-                                ylim=minmax(emb[:, 1]),
+                                xlim=(xmin, xmax),
+                                ylim=(ymin, ymax),
                                 xlabel=f'{basisu}{comp[0]}',
-                                ylabel=f'{basisu}{comp[1]}')
+                                ylabel=f'{basisu}{comp[1]}') if not ret_hl else root_cell_scatter
 
         if typp == 'expr':
             expr = adata_mraw.obs_vector(gene)
 
             x = hv.Dimension('x', label='pseudotime')
             y = hv.Dimension('y', label='expression')
+            # data is in outer scope
             scatter_expr = hv.Scatter({'x': pseudotime, 'y': expr, 'condition': data},
                                       kdims=[x, y], vdims='condition')
 
@@ -746,6 +772,9 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
 
     if keep_frac is None:
         keep_frac = 0.2
+
+    if root_cell_size is None:
+        root_cell_size = size * 2
 
     if isinstance(bases, str):
         bases = [bases]
@@ -836,6 +865,8 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
             cs = create_scatterplot
 
     emb = hv.DynamicMap(partial(cs, typp='emb'), kdims=kdims)
+    if root_cell_hl:
+        root_cell = hv.DynamicMap(partial(cs, typp='root_cell_hl'), kdims=kdims)
     emb_d = hv.DynamicMap(partial(cs, typp='emb_discrete'), kdims=kdims)
     expr = hv.DynamicMap(partial(cs, typp='expr'), kdims=kdims)
     hist = hv.DynamicMap(partial(cs, typp='hist'), kdims=kdims)
@@ -855,6 +886,9 @@ def dpt(adata, key, genes=None, bases=['diffmap'], components=[1, 2],
                         threshold=0.8, max_px=5)
     elif subsample == 'decimate':
         emb, emb_d, expr = (decimate(d, max_samples=int(adata.n_obs * keep_frac)) for d in (emb, emb_d, expr))
+
+    if root_cell_hl:
+        emb *= root_cell
 
     emb = emb.opts(axiswise=False, framewise=True, frame_height=plot_height, frame_width=plot_width)
     expr = expr.opts(axiswise=True, framewise=True, frame_height=plot_height, frame_width=plot_width)
