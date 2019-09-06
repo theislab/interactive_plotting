@@ -4,3 +4,5 @@ from .interactive_plotting import interactive_hist, \
                                   highlight_indices, \
                                   link_plot, \
                                   gene_trend
+
+from .holoviews_plots import scatter, scatterc, dpt

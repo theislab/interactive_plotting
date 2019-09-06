@@ -16,9 +16,13 @@ pip install -e .
 
 ## Getting Started
 We recommend checking out the [tutorial notebook](./notebooks/interactive_plotting_tutorial.ipynb).
+```ipl.scatter```, ```ipl.scatterc``` and ```ipl.dpt``` can handle large number of cells (100K+).
 
 In your Jupyter Notebook, execute the following lines:
 ```python
+import holoviews as hv  # needed for scatter, scatterc and dpt
+hv.extension('bokeh')
+
 import interactive_plotting as ipl  
 
 from bokeh.io import output_notebook
@@ -27,6 +31,27 @@ output_notebook()
 
 ## Examples
 Here are some exemplary figures for each of the plotting functions.
+```python
+ipt.scatter
+```
+![Scatterplot (cont)](resources/images/scatter_cont.png?raw=true "Scatterplot (continous)")
+
+---
+
+```python
+ipt.scatterc
+```
+![Scatterplot (cat)](resources/images/scatter_cat.png?raw=true "Scatterplot (categorical)")
+
+---
+
+```python
+ipt.dpt
+```
+![DPT plot](resources/images/dpt_plot.png?raw=true "DPT plot")
+
+---
+
 ```python
 ipl.link_plot
    ``` 

@@ -7,7 +7,6 @@ from scipy.sparse import issparse
 from scipy.spatial import distance_matrix, ConvexHull
 
 from functools import reduce
-# from collections.abc import Iterable
 from collections import defaultdict
 from itertools import product
 
@@ -23,6 +22,7 @@ import matplotlib
 import bokeh
 
 
+from ._utils import sample_unif, sample_density
 from bokeh.plotting import figure, show
 from bokeh.models import ColumnDataSource, Slider, HoverTool, ColorBar, \
         Patches, Legend, CustomJS, TextInput, LabelSet, Select 
@@ -123,39 +123,7 @@ def _set_plot_wh(fig, w, h):
         fig.plot_height = h
 
 
-# based on:
-# https://github.com/velocyto-team/velocyto-notebooks/blob/master/python/DentateGyrus.ipynb
-def _sample_unif(adata, steps, basis='umap'):
-    if not isinstance(steps, (tuple, list)):
-        steps = (steps, steps)
-
-    embedding = adata.obsm[f'X_{basis}'][:, :2]
-    grs = []
-
-    for i in range(embedding.shape[1]):
-        m, M = np.min(embedding[:, i]), np.max(embedding[:, i])
-        m = m - 0.025 * np.abs(M - m)
-        M = M + 0.025 * np.abs(M - m)
-        gr = np.linspace(m, M, num=steps[i])
-        grs.append(gr)
-
-    meshes_tuple = np.meshgrid(*grs)
-    gridpoints_coordinates = np.vstack([i.flat for i in meshes_tuple]).T
-
-    nn = NearestNeighbors()
-    nn.fit(embedding)
-    dist, ixs = nn.kneighbors(gridpoints_coordinates, 1)
-
-    min_dist = np.sqrt((meshes_tuple[0][0, 0] - meshes_tuple[0][0, 1]) ** 2 +
-                             (meshes_tuple[1][0, 0] - meshes_tuple[1][1, 0]) ** 2) / 2
-
-    ixs = ixs[dist < min_dist]
-    ixs = np.unique(ixs)
-
-    return  adata[ixs].copy()
-
-
-def _sample_density(adata, size, basis='umap', key=None):
+def sample_density(adata, size, basis='umap', key=None):
     if size >= adata.n_obs:
         return adata
 
@@ -345,57 +313,6 @@ def _smooth_expression(x, y, n_points=100, time_span=[None, None], mode='gp', ke
         return x_test, mean, cov
 
     raise ValueError(f'Uknown type: `{type}`.')
-
-
-def _compute_dist(x_obs, x_theo):
-    """
-    Utility function to compute distance a between point cloud and curve.
-
-    Params
-    --------
-    x_obs: np.array
-        observed data
-    x_theo: np.array
-        theoretical data/curve
-
-    Returns 
-    --------
-    score:
-        a distance measure
-    """
-
-    from fastdtw import fastdtw
-    score, path = fastdtw(x_obs, x_theo, dist=2)
-
-    return score
-
-
-def _shift_scale(x_obs, x_theo, fit_intercept=False):
-    """Utility function to shift and scale the integrated velocities.
-
-    Params:
-    --------
-    x_obs: np.array
-        observed data
-    x_theo: np.array
-        theoretical data/curve
-    fit_intercept: bool, optional (default: `False`)
-        whether to fit intercept for the linear regression
-
-    Returns
-    --------
-    coefficients, intercept
-        coefficients and intercept of a linear model
-    """
-
-    # find the best possible scaling factor using simple lin reg
-    # this accounts for not knowing beta
-    from sklearn.linear_model import LinearRegression
-
-    reg = LinearRegression(fit_intercept=fit_intercept)
-    reg.fit(x_obs[:, None], x_theo)
-
-    return reg.coef_, reg.intercept_
 
 
 def _create_gt_fig(adatas, dataframe, color_key, title, color_mapper, show_cont_annot=False,
@@ -1108,7 +1025,7 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_genes=10,
 
 
 def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
-             sampling=None, step_size=30, sample_size=500,
+             subsample=None, steps=[40, 40], sample_size=500,
              distance=2, cutoff=True, highlight_only=None, palette=None,
              show_legend=False, legend_loc='top_right', plot_width=None, plot_height=None):
     """
@@ -1129,14 +1046,14 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
         only the first plot is hoverable
     components: list(int); list(list(int)), optional (default: `[1, 2]`)
         list of components for each basis
-    sampling: str, optional (default: `None`)
-        sampling strategy to use when there are too many cells
+    subsample: str, optional (default: `None`)
+        subsample strategy to use when there are too many cells
         possible values are: `"density"`, `"uniform"`, `None`
-    step_size: int; tuple(int), optional (default: `30`)
-        number of steps in each direction when using `sampling="uniform"`
+    steps: int; list(int), optional (default: `[40, 40]`)
+        number of steps in each direction when using `subsample="uniform"`
     sample_size: int, optional (default: `500`)
         number of cells to sample based on their density in the respective embedding
-        when using `sampling="density"`; should be < `1000`
+        when using `subsample="density"`; should be < `1000`
     distance: int; str, optional (default: `2`)
         for integers, use p-norm,
         for strings, only `'dpt'` is available
@@ -1152,6 +1069,8 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
         display the legend also in the linked plot
     legend_loc: str, optional (default `'top_right'`)
         location of the legend
+    seed: int, optional (default: `None`)
+        seed when `subsample='density'`
     plot_width: int, optional (default: `None`)
         width of the plot
     plot_height: int, optional (default: `None`)
@@ -1161,14 +1080,15 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
     --------
     None
     """
+
     assert key in adata.obs.keys(), f'`{key}` not found in `adata.obs`.'
 
-    if sampling == 'uniform':
-        adata = _sample_unif(adata, step_size, bases[0])
-    elif sampling == 'density':
-        adata = _sample_density(adata, sample_size, bases[0])
-    elif sampling is not None:
-        raise ValueError(f'Unknown sampling strategy: `{sampling}`.')
+    if subsample == 'uniform':
+        adata = sample_unif(adata, steps, bases[0])
+    elif subsample == 'density':
+        adata = sample_density(adata, sample_size, bases[0], seed=seed)
+    elif subsample is not None:
+        raise ValueError(f'Unknown subsample strategy: `{subsample}`.')
 
     palette = cm.RdYlBu if palette is None else palette
     if isinstance(palette, matplotlib.colors.Colormap):
@@ -1215,8 +1135,7 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
     df['hl_key'] = list(adata.obs[highlight_only]) if highlight_only is not None else 0
     df[key] = list(map(str, adata.obs[key]))
 
-    start_ix = df.columns[2]
-
+    start_ix = '0'  # our root cell
     ds = ColumnDataSource(df)
     mapper = linear_cmap(field_name='hl_color', palette=palette,
                          low=df[start_ix].min(), high=df[start_ix].max())
