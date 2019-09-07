@@ -5,6 +5,7 @@ from collections import Iterable
 from inspect import signature
 from sklearn.neighbors import NearestNeighbors
 
+import scanpy as sc
 import numpy as np
 import pandas as pd
 import panel as pn
@@ -23,6 +24,33 @@ OBSM_SEP = ':'
 
 CBW = 10  # colorbar width
 BASIS_PAT = re.compile('^X_(.+)')
+
+
+class SamplingLazyDict(dict):
+
+    def __init__(self, adata, subsample, *args, callback_kwargs={}, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.adata = adata
+        self.callback_kwargs = callback_kwargs
+        if subsample == 'uniform':
+            self.callback = sample_unif
+        elif subsample == 'density':
+            self.callback = sample_density
+        else:
+            self.callback = lambda *args, **kwargs: adata
+
+    def __getitem__(self, key):
+        if key not in self:
+            basis, comps = key
+            rev_comps = comps[::-1]
+            if (basis, rev_comps) in self.keys():
+                res = self[basis, rev_comps]
+            else:
+                res = self.callback(self.adata, basis=basis, components=comps, **self.callback_kwargs)
+            self[key] = res
+            return res
+
+        return super().__getitem__(key)
 
 
 def iterable(obj):
@@ -413,13 +441,16 @@ def get_all_obsm_keys(adata, ixs):
 
 # based on:
 # https://github.com/velocyto-team/velocyto-notebooks/blob/master/python/DentateGyrus.ipynb
-def sample_unif(adata, steps, basis='umap'):
+def sample_unif(adata, steps, basis='umap', components=[0, 1]):
     if not isinstance(steps, (tuple, list)):
         steps = (steps, steps)
 
-    embedding = adata.obsm[f'X_{basis}'][:, :2]
-    grs = []
+    assert len(components)
+    assert min(components) >= 0
 
+    embedding = adata.obsm[f'X_{basis}'][:, components]
+
+    grs = []
     for i in range(embedding.shape[1]):
         m, M = np.min(embedding[:, i]), np.max(embedding[:, i])
         m = m - 0.025 * np.abs(M - m)
@@ -443,28 +474,26 @@ def sample_unif(adata, steps, basis='umap'):
     return adata[ixs].copy()
 
 
-def sample_density(adata, size, basis='umap', key=None, seed=None):
+def sample_density(adata, size, basis='umap', seed=None, components=[0, 1]):
     if size >= adata.n_obs:
         return adata
 
-    if key is not None:
-        density_key = f'{basis}_density_{key}'
-        assert density_key in adata.obs.keys(), f'`{density_key}` not found in `adata.obs`. Try running `sc.tl.embedding_density` with `groups="{key}"` for basis=`{basis}`.'
-        # normalize, flatten the index
-        tmp = pd.DataFrame(adata.obs.groupby(key).apply(lambda df: np.exp(df[density_key]) / np.sum(np.exp(df[density_key])))).reset_index()
-        # cleanup before join
-        tmp.index = tmp['index']
-        del tmp['index']
-        tmp.rename(colums={density_key: 'prob_density',
-                           key: f'{key}_test'}, inplace=True)
-        tmp = adata.obs.join(tmp, on='index')
-        assert all(tmp[key] == tmp[f'{key}_test']), 'something went terribly wrong when merging fataframes'
+    if components[0] == components[1]:
+        tmp = pd.DataFrame(np.ones(adata.n_obs) / adata.n_obs, columns=['prob_density'])
     else:
-        assert f'{basis}_density' in adata.obs.keys(), f'`{basis}_density` not found in `adata.obs`. Try running `sc.tl.embedding_density` for basis=`{basis}`.'
-        tmp = pd.DataFrame(np.exp(adata.obs[f'{basis}_density']) / np.sum(np.exp(adata.obs[f'{basis}_density'])))
-        tmp.rename(columns={f'{basis}_density': 'prob_density'}, inplace=True)
+        # should be unique, using it only once since we cache the results
+        # we don't need to add the components
+        key_added =  f'{basis}_density_ipl_tmp'
+        remove_key = False  # we may be operating on original object, keep it clean
+        if key_added not in adata.obs.keys():
+            sc.tl.embedding_density(adata, basis, key_added=key_added)
+            remove_key = True
+        tmp = pd.DataFrame(np.exp(adata.obs[key_added]) / np.sum(np.exp(adata.obs[key_added])))
+        tmp.rename(columns={key_added: 'prob_density'}, inplace=True)
+        if remove_key:
+            del adata.obs[key_added]
 
     state = np.random.RandomState(seed)
-    ixs = state.choice(range(adata.n_obs), size=size, p=tmp['prob_density'], replace=False)
+    ixs = sorted(state.choice(range(adata.n_obs), size=size, p=tmp['prob_density'], replace=False))
 
     return adata[ixs].copy()
