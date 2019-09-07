@@ -123,31 +123,6 @@ def _set_plot_wh(fig, w, h):
         fig.plot_height = h
 
 
-def sample_density(adata, size, basis='umap', key=None):
-    if size >= adata.n_obs:
-        return adata
-
-    if key is not None:
-        density_key = f'{basis}_density_{key}'
-        assert density_key in adata.obs_keys(), f'{density_key} not found in `adata.obs_keys()`. Did you run `sc.tl.embedding_density` with `groups="{key}"`?'
-        # normalize, flatten the index
-        tmp = pd.DataFrame(adata.obs.groupby(key).apply(lambda df: np.exp(df[density_key]) / np.sum(np.exp(df[density_key])))).reset_index()
-        # cleanup before join
-        tmp.index = tmp['index']
-        del tmp['index']
-        tmp.rename(colums={density_key: 'prob_density',
-                           key: f'{key}_test'}, inplace=True)
-        tmp = adata.obs.join(tmp, on='index')
-        assert all(tmp[key] == tmp[f'{key}_test']), 'something went terribly wrong when merging fataframes'
-    else:
-        tmp = pd.DataFrame(np.exp(adata.obs[f'{basis}_density']) / np.sum(np.exp(adata.obs[f'{basis}_density'])))
-        tmp.rename(columns={f'{basis}_density': 'prob_density'}, inplace=True)
-
-    ixs = np.random.choice(range(adata.n_obs), size=size, p=tmp['prob_density'], replace=False)
-
-    return adata[ixs].copy()
-
-
 def _create_mapper(adata, key):
     """
     Helper function to create CategoricalColorMapper from annotated data.

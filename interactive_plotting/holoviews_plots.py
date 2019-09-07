@@ -3,7 +3,7 @@
 from ._utils import *
 
 from collections import Iterable
-from collections import OrderedDict as odict
+from collections import defaultdict, OrderedDict as odict
 
 from functools import wraps, partial
 from bokeh.palettes import Viridis256
@@ -121,9 +121,12 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
         else:
             perc = None
 
+        ad = alazy[basis, tuple(comp)]
+        ad_mraw = ad.raw if use_raw else ad
+
         # because diffmap has small range, it iterferes with
         # the legend created
-        emb = adata.obsm[f'X_{basis}'][:, comp] * (1000 if is_diffmap else 1)
+        emb = ad.obsm[f'X_{basis}'][:, comp] * (1000 if is_diffmap else 1)
         comp += not is_diffmap  # naming consistence
 
         basisu = basis.upper()
@@ -131,16 +134,16 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
         y = hv.Dimension('y', label=f'{basisu}{comp[1]}')
 
         #if ignore_after is not None and ignore_after in gene:
-        if gene in adata.obsm.keys():
-            data = adata.obsm[gene][:, 0]
-        elif gene in adata.obs.keys():
-            data = adata.obs[gene].values
-        elif gene in adata_mraw.var_names:
-            data = adata_mraw.obs_vector(gene)
+        if gene in ad.obsm.keys():
+            data = ad.obsm[gene][:, 0]
+        elif gene in ad.obs.keys():
+            data = ad.obs[gene].values
+        elif gene in ad_mraw.var_names:
+            data = ad_mraw.obs_vector(gene)
         else:
             gene, ix = gene.split(ignore_after)
             ix = int(ix)
-            data = adata.obsm[gene][:, ix]
+            data = ad.obsm[gene][:, ix]
 
         data = np.array(data, dtype=np.float64)
 
@@ -182,13 +185,13 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
     assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
 
     if subsample == 'uniform':
-        adata = sample_unif(adata, steps, bases[0])
+        cb_kwargs = {'steps': steps}
     elif subsample == 'density':
-        adata = sample_density(adata, int(keep_frac * adata.n_obs), bases[0], seed=seed)
-
-    # maybe raw
-    # from this we'll be getting the expression
-    adata_mraw = adata.raw if use_raw else adata
+        cb_kwargs = {'size': int(keep_frac * adata.n_obs), 'seed': seed}
+    else:
+        cb_kwargs = {}
+    alazy = SamplingLazyDict(adata, subsample, callback_kwargs=cb_kwargs)
+    adata_mraw = adata.raw if use_raw else adata  # maybe raw
 
     if obs_keys is None:
         obs_keys = skip_or_filter(adata, adata.obs.keys(), adata.obs.keys(), dtype=is_numeric,
@@ -397,9 +400,10 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
         else:
             comp = np.array(components[ixs])  # need to make a copy
 
-        # because diffmap has small range, it iterferes with
-        # the legend created
-        emb = adata.obsm[f'X_{basis}'][:, comp] * (1000 if is_diffmap else 1)
+        # subsample is uniform or density
+        ad = alazy[basis, tuple(comp)]
+        # because diffmap has small range, it interferes with the legend
+        emb = ad.obsm[f'X_{basis}'][:, comp] * (1000 if is_diffmap else 1)
         comp += not is_diffmap  # naming consistence
 
         basisu = basis.upper()
@@ -407,14 +411,14 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
         y = hv.Dimension('y', label=f'{basisu}{comp[1]}')
 
         #if ignore_after is not None and ignore_after in gene:
-        if cond in adata.obsm.keys():
-            data = adata.obsm[cond][:, 0]
-        elif cond in adata.obs.keys():
-            data = adata.obs[cond]
+        if cond in ad.obsm.keys():
+            data = ad.obsm[cond][:, 0]
+        elif cond in ad.obs.keys():
+            data = ad.obs[cond]
         else:
             cond, ix = cond.split(ignore_after)
             ix = int(ix)
-            data = adata.obsm[cond][:, ix]
+            data = ad.obsm[cond][:, ix]
 
         data = pd.Categorical(data).as_ordered()
         scatter = hv.Scatter({'x': emb[:, 0], 'y': emb[:, 1], 'cond': data},
@@ -446,9 +450,12 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
     assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
 
     if subsample == 'uniform':
-        adata = sample_unif(adata, steps, bases[0])
+        cb_kwargs = {'steps': steps}
     elif subsample == 'density':
-        adata = sample_density(adata, int(keep_frac * adata.n_obs), bases[0], seed=seed)
+        cb_kwargs = {'size': int(keep_frac * adata.n_obs), 'seed': seed}
+    else:
+        cb_kwargs = {}
+    alazy = SamplingLazyDict(adata, subsample, callback_kwargs=cb_kwargs)
 
     if obs_keys is None:
         obs_keys = skip_or_filter(adata, adata.obs.keys(), adata.obs.keys(),
@@ -577,7 +584,7 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
 @wrap_as_col
 def dpt(adata, key, genes=None, bases=None, components=[1, 2],
         subsample='datashade', steps=40, use_raw=False, keep_frac=None,
-        sort=True, skip=True, seed=None, show_legend=True,
+        sort=True, skip=True, seed=None, show_legend=True, root_cell_all=False,
         root_cell_hl=True, root_cell_bbox=True, root_cell_size=None, root_cell_color='orange',
         legend_loc='top_right', size=4, perc=None, show_perc=True, cat_cmap=None, cont_cmap=None,
         plot_height=400, plot_width=400, *args, **kwargs):
@@ -642,6 +649,10 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
     cont_cmap: List[Str], optional (default: `bokeh.palettes.Viridis256`)
         continuous colormap in hex format
         used when `key` is continuous variable
+    root_cell_all: Bool, optional (default: `False`)
+        show all root cells, even though they might not be in the embedding
+        (e.g. when subsample='uniform' or 'density')
+        otherwise only show in the embedding (based on the data of 1st basis in `bases`)
     root_cell_hl: Bool, optional (default: `True`)
         highlight the root cell
     root_cell_bbox: Bool, optional (default: `True`)
@@ -673,6 +684,9 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
         else:
             comp = np.array(components[ixs])  # need to make a copy
 
+        ad = alazy[basis, tuple(comp)]
+        ad_mraw = ad.raw if use_raw else ad
+
         if perc_low is not None and perc_high is not None:
             if perc_low > perc_high:
                 perc_low, perc_high = perc_high, perc_low
@@ -682,7 +696,7 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
 
         # because diffmap has small range, it iterferes with
         # the legend created
-        emb = adata.obsm[f'X_{basis}'][:, comp] * (1000 if is_diffmap else 1)
+        emb = ad.obsm[f'X_{basis}'][:, comp] * (1000 if is_diffmap else 1)
         comp += not is_diffmap  # naming consistence
 
         basisu = basis.upper()
@@ -691,8 +705,11 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
         xmin, xmax = minmax(emb[:, 0])
         ymin, ymax = minmax(emb[:, 1])
 
+        # adata is the original, ad may be subsampled
+        mask = np.in1d(adata.obs_names, ad.obs_names)
+
         if typp == 'emb_discrete':
-            scatter = hv.Scatter({'x': emb[:, 0], 'y': emb[:, 1], 'condition': data},
+            scatter = hv.Scatter({'x': emb[:, 0], 'y': emb[:, 1], 'condition': data[mask]},
                                  kdims=[x, y], vdims='condition').sort('condition')
 
             scatter = scatter.opts(title=key,
@@ -710,10 +727,14 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
             return scatter.opts(colorbar=True, colorbar_opts={'width': CBW},
                                 cmap=cont_cmap, clim=minmax(data, perc=perc))
 
-        rid = np.where(adata.obs_names == root_cell)[0][0]
-        adata.uns['iroot'] = rid
 
         if typp == 'root_cell_hl':
+            # find the index of the root cell in maybe subsampled data
+            rid = np.where(ad.obs_names == root_cell)[0]
+            if not len(rid):
+                return hv.Scatter([]).opts(axiswise=True, framewise=True)
+
+            rid = rid[0]
             dx, dy = (xmax - xmin) / 25, (ymax - ymin) / 25
             rx, ry = emb[rid, 0], emb[rid, 1]
 
@@ -724,9 +745,11 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
             return root_cell_scatter
 
 
+        adata.uns['iroot'] = np.where(adata.obs_names == root_cell)[0][0]
         dpt_fn(adata, *args, **kwargs)
 
         pseudotime = adata.obs['dpt_pseudotime'].values
+        pseudotime = pseudotime[mask]
         pseudotime[pseudotime == np.inf] = 1
         pseudotime[pseudotime == -np.inf] = 0
 
@@ -744,15 +767,15 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
                                 xlim=(xmin, xmax),
                                 ylim=(ymin, ymax),
                                 xlabel=f'{basisu}{comp[0]}',
-                                ylabel=f'{basisu}{comp[1]}') if not ret_hl else root_cell_scatter
+                                ylabel=f'{basisu}{comp[1]}')# if not ret_hl else root_cell_scatter
 
         if typp == 'expr':
-            expr = adata_mraw.obs_vector(gene)
+            expr = ad_mraw.obs_vector(gene)
 
             x = hv.Dimension('x', label='pseudotime')
             y = hv.Dimension('y', label='expression')
             # data is in outer scope
-            scatter_expr = hv.Scatter({'x': pseudotime, 'y': expr, 'condition': data},
+            scatter_expr = hv.Scatter({'x': pseudotime, 'y': expr, 'condition': data[mask]},
                                       kdims=[x, y], vdims='condition')
 
             scatter_expr = scatter_expr.opts(title=key,
@@ -801,10 +824,12 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
     assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
 
     if subsample == 'uniform':
-        adata = sample_unif(adata, steps, bases[0])
+        cb_kwargs = {'steps': steps}
     elif subsample == 'density':
-        adata = sample_density(adata, int(keep_frac * adata.n_obs), bases[0], seed=seed)
-
+        cb_kwargs = {'size': int(keep_frac * adata.n_obs), 'seed': seed}
+    else:
+        cb_kwargs = {}
+    alazy = SamplingLazyDict(adata, subsample, callback_kwargs=cb_kwargs)
     adata_mraw = adata.raw if use_raw else adata
 
     if genes is None:
@@ -852,7 +877,7 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
     if cont_cmap is None:
         cont_cmap = Viridis256
 
-    kdims = [hv.Dimension('Root cell', values=adata.obs_names),
+    kdims = [hv.Dimension('Root cell', values=(adata if root_cell_all else alazy[bases[0], tuple(components[0])]).obs_names),
              hv.Dimension('Gene', values=genes),
              hv.Dimension('Basis', values=bases)]
     cs = lambda cell, gene, basis, *args, **kwargs: create_scatterplot(cell, gene, basis, perc[0], perc[1], *args, **kwargs)
