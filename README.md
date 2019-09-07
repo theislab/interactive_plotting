@@ -2,7 +2,7 @@
 
 
 ## About
-This repository contains 6 different interactive plotting functions, which may be useful during exploratory analysis.
+This repository contains 9 different interactive plotting functions, which may be useful during exploratory analysis.
 
 Almost every function provides some information when hovering over the plot and some parts of the plots can be hidden by clicking the legend.
 
