@@ -22,7 +22,7 @@ import matplotlib
 import bokeh
 
 
-from ._utils import sample_unif, sample_density
+from ._utils import sample_unif, sample_density, to_hex_palette
 from bokeh.plotting import figure, show
 from bokeh.models import ColumnDataSource, Slider, HoverTool, ColorBar, \
         Patches, Legend, CustomJS, TextInput, LabelSet, Select 
@@ -98,24 +98,6 @@ def _inter_color_code(*colors):
             """
 
 
-def _to_hex(palette):
-    """
-    Converts matplotlib color array to hex strings
-    """
-    if not isinstance(palette, np.ndarray):
-        palette = np.array(palette)
-
-    if isinstance(palette[0], str):
-        assert all(map(colors.is_color_like, palette)), 'Not all strings are color like.'
-        return palette
-
-    minn = np.min(palette)
-    # normalize to [0, 1]
-    palette = (palette - minn) / (np.max(palette) - minn)
-
-    return [colors.to_hex(c) if colors.is_color_like(c) else c for c in palette]
-
-
 def _set_plot_wh(fig, w, h):
     if w is not None:
         fig.plot_width = w
@@ -147,7 +129,7 @@ def _create_mapper(adata, key):
         palette = cm.get_cmap('viridis', adata.n_obs)
 
         mapper = dict(zip(vals, range(len(vals))))
-        palette = _to_hex(palette([mapper[v] for v in vals]))
+        palette = to_hex_palette(palette([mapper[v] for v in vals]))
 
         return LinearColorMapper(palette=palette, low=np.min(vals), high=np.max(vals))
 
@@ -160,7 +142,7 @@ def _create_mapper(adata, key):
         mapper = dict(zip(vals, range(len(vals))))
         palette = palette([mapper[v] for v in vals])
 
-    palette = _to_hex(palette)
+    palette = to_hex_palette(palette)
 
     if is_categorical:
         return CategoricalColorMapper(palette=palette, factors=list(map(str, adata.obs[key].cat.categories)))
@@ -1067,7 +1049,7 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
 
     palette = cm.RdYlBu if palette is None else palette
     if isinstance(palette, matplotlib.colors.Colormap):
-        palette = _to_hex(palette(range(palette.N), 1., bytes=True))
+        palette = to_hex_palette(palette(range(palette.N), 1., bytes=True))
 
     if not isinstance(components[0], list):
         components = [components]

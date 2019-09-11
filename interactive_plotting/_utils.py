@@ -53,6 +53,25 @@ class SamplingLazyDict(dict):
         return super().__getitem__(key)
 
 
+def to_hex_palette(palette, normalize=True):
+    """
+    Converts matplotlib color array to hex strings
+    """
+    if not isinstance(palette, np.ndarray):
+        palette = np.array(palette)
+
+    if isinstance(palette[0], str):
+        assert all(map(colors.is_color_like, palette)), 'Not all strings are color like.'
+        return palette
+
+    if normalize:
+        minn = np.min(palette)
+        # normalize to [0, 1]
+        palette = (palette - minn) / (np.max(palette) - minn)
+
+    return [colors.to_hex(c) if colors.is_color_like(c) else c for c in palette]
+
+
 def iterable(obj):
     '''
     Checks whether the object is iterable non-string.
