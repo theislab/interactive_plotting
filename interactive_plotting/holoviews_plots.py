@@ -1112,7 +1112,7 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
         g = g.opts(inspection_policy='nodes' if subsample == 'datashade' else hover_selection,
                       tools=['hover', 'box_select'],
                       edge_color=hv.dim(color_edges_by) if color_edges_by is not None else None,
-                      edge_line_width=edge_width * (hv.dim('weight') if paga_pos is not None else 1),
+                      edge_line_width=edge_width * (hv.dim('weight') if is_paga else 1),
                       edge_cmap=cont_cmap,
                       node_color=color_key,
                       node_cmap=cat_cmap,
@@ -1168,13 +1168,16 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
         which = None
 
     paga_pos = None
+    is_paga = False
     if which is None and key in adata.uns.keys():
         data = adata.uns[key]
     elif which == 'n' and key in adata.uns['neighbors'].keys():
         data = adata.uns['neighbors'][key]
     elif which == 'p' and key in adata.uns['paga'].keys():
         data = adata.uns['paga'][key]
-        paga_pos = adata.uns['paga']['pos']
+        is_paga = True
+        if 'pos' in adata.uns['paga'].keys():
+            paga_pos = adata.uns['paga']['pos']
         directed = False
     else:
         raise ValueError(f'Key `{key}` not found in `adata.uns` or '
@@ -1184,7 +1187,7 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
     assert data.ndim == 2, f'Adjacency matrix must be dimension of `2`, found `{adata.ndim}`.'
     assert data.shape[0] == data.shape[1], 'Adjacency matrix is not square, found shape `{data.shape}`.'
 
-    if ixs is None or (paga_pos is not None and not force_paga_indices):
+    if ixs is None or (is_paga and not force_paga_indices):
         ixs = np.arange(data.shape[0])
     else:
         assert np.min(ixs) >= 0
@@ -1215,7 +1218,7 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
     if len(bases):
         components[np.where(bases != 'diffmap')] -= 1
 
-    if paga_pos is not None:
+    if is_paga:
         g_name = adata.uns['paga']['groups']
         if color_key is None or color_key != g_name:
             warnings.warn(f'Color key `{color_key}` differs from PAGA\'s groups `{g_name}`, setting it to `{g_name}`.')

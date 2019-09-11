@@ -932,7 +932,9 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_genes=10,
         if len(conv_hulls) == 0:
             continue
 
-        xs, ys, ks = zip(*conv_hulls.groupby(key).apply(lambda df: list(map(list, (df['x'], df['y'], df[key])))))
+        # must use 'group' instead of key since key is MultiIndex
+        conv_hulls.rename(columns={'louvain': 'group'}, inplace=True)
+        xs, ys, ks = zip(*conv_hulls.groupby('group').apply(lambda df: list(map(list, (df['x'], df['y'], df['group'])))))
         tmp_data = defaultdict(list)
         tmp_data['xs'] = xs
         tmp_data['ys'] = ys
