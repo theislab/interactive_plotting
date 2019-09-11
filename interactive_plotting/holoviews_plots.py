@@ -43,14 +43,16 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
         list of genes to add for visualization
         if `None`, use `adata.var_names`
     bases: Union[Str, List[Str]], optional (default: `None`)
-        bases in `adata.obsm`, if `None`, get all of them
+        bases in `adata.obsm`, if `None`, get all available
     components: Union[List[Int], List[List[Int]]], optional (default: `[1, 2]`)
         components of specified `bases`
         if it's of type `List[Int]`, all the bases have use the same components
     obs_keys: List[Str], optional (default: `None`)
         keys of categorical observations in `adata.obs`
+        if `None`, get all available
     obsm_keys: List[Str], optional (default: `None`)
         keys of categorical observations in `adata.obsm`
+        if `None`, get all available
     use_raw: Bool, optional (default: `False`)
         use `adata.raw` for gene expression levels
     subsample: Str, optional (default: `'datashade'`)
@@ -330,16 +332,16 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
     adata: anndata.Anndata
         anndata object
     bases: Union[Str, List[Str]], optional (default: `None`)
-        bases in `adata.obsm`, if `None`, get all of them
+        bases in `adata.obsm`, if `None`, get all available
     components: Union[List[Int], List[List[Int]]], optional (default: `[1, 2]`)
         components of specified `bases`
         if it's of type `List[Int]`, all the bases have use the same components
     obs_keys: List[Str], optional (default: `None`)
         keys of categorical observations in `adata.obs`
-        if `None`, try searching
+        if `None`, get all available
     obsm_keys: List[Str], optional (default: `None`)
         keys of categorical observations in `adata.obsm`
-        if `None`, try searching
+        if `None`, get all available
     subsample: Str, optional (default: `'datashade'`)
         subsampling strategy for large data
         possible values are `None, 'none', 'datashade', 'decimate', 'density', 'uniform'`
@@ -603,7 +605,7 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
         list of genes to add for visualization
         if `None`, use `adata.var_names`
     bases: Union[Str, List[Str]], optional (default: `None`)
-        bases in `adata.obsm`, if `None`, get all of them
+        bases in `adata.obsm`, if `None`, get all available
     components: Union[List[Int], List[List[Int]]], optional (default: `[1, 2]`)
         components of specified `bases`
         if it's of type `List[Int]`, all the bases have use the same components
