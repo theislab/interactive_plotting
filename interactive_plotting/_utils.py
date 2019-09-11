@@ -5,9 +5,11 @@ from collections import Iterable
 from inspect import signature
 from sklearn.neighbors import NearestNeighbors
 
+import matplotlib.colors as colors
 import scanpy as sc
 import numpy as np
 import pandas as pd
+import networkx as nx
 import panel as pn
 import re
 import itertools
@@ -24,6 +26,13 @@ OBSM_SEP = ':'
 
 CBW = 10  # colorbar width
 BASIS_PAT = re.compile('^X_(.+)')
+
+# for graph
+DEFAULT_LAYOUTS = {l.split('_layout')[0]:getattr(nx.layout, l)
+                   for l in dir(nx.layout) if l.endswith('_layout')}
+DEFAULT_LAYOUTS.pop('bipartite')
+DEFAULT_LAYOUTS.pop('rescale')
+DEFAULT_LAYOUTS.pop('spectral')
 
 
 class SamplingLazyDict(dict):
@@ -70,6 +79,12 @@ def to_hex_palette(palette, normalize=True):
         palette = (palette - minn) / (np.max(palette) - minn)
 
     return [colors.to_hex(c) if colors.is_color_like(c) else c for c in palette]
+
+
+def pad(minn, maxx, padding=0.05):
+    if minn > maxx:
+        maxx, minn = minn, maxx
+    return minn - padding, maxx + padding
 
 
 def iterable(obj):

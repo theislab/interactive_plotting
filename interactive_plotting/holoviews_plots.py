@@ -5,18 +5,22 @@ from ._utils import *
 from collections import Iterable
 from collections import defaultdict, OrderedDict as odict
 
-from functools import wraps, partial
+from pandas.api.types import is_categorical_dtype, infer_dtype
+from scipy.sparse import issparse
+from functools import partial
 from bokeh.palettes import Viridis256
 from datashader.colors import Sets1to3
 from pandas.core.indexes.base import Index
-from holoviews.operation.datashader import datashade, shade, dynspread, rasterize, spread
+from holoviews.operation.datashader import datashade, bundle_graph, shade, dynspread, rasterize, spread
 from holoviews.operation import decimate
 
 import scanpy as sc
 import numpy as np
 import pandas as pd
+import networkx as nx
 import holoviews as hv
 import datashader as ds
+import warnings
 
 
 try:
@@ -236,7 +240,7 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
 
     conditions = obs_keys + obsm_keys + genes
     if len(conditions) == 0:
-        warnings.warn(f'Nothing to plot.')
+        warnings.warn(f'Nothing to plot, no conditions found.')
         return
 
     if not isinstance(components, np.ndarray):
@@ -380,7 +384,7 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
 
     Returns
     --------
-    plot: `panel.panel`
+    plot: panel.panel
         holoviews plot wrapped in `panel.panel`
     '''
 
@@ -490,7 +494,7 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
     conditions = obs_keys + obsm_keys
 
     if len(conditions) == 0:
-        warnings.warn('Nothing to plot.')
+        warnings.warn('Nothing to plot, no conditions found.')
         return
 
     if not isinstance(components, np.ndarray):
@@ -672,7 +676,7 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
 
     Returns
     --------
-    plot: `panel.Column`
+    plot: panel.Column
         holoviews plot wrapped in `panel.Column`
     '''
 
@@ -938,3 +942,356 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
         emb_d = (emb_d * legend).opts(legend_position=legend_loc, show_legend=True)
 
     return ((emb + emb_d)  + (hist + expr).opts(axiswise=True, framewise=True)).cols(2)
+
+
+@wrap_as_col
+def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[],
+          ixs=None, filter_edges=None, directed=True, bundle=False, bundle_kwargs={},
+          subsample=None, layouts=None, layout_kwargs={}, force_paga_indices=False,
+          degree_by=None, legend_loc='top_right', node_size=12, edge_width=2, arrowhead_length=None,
+          perc=None, color_edges_by='weight', hover_selection='nodes',
+          cat_cmap=None, cont_cmap=None, plot_height=600, plot_width=600):
+    '''
+    Params
+    --------
+
+    adata: anndata.Anndata
+        anndata object
+    key: Str
+        key in `adata.uns`, `adata.uns[\'paga\'] or adata.uns[\'neighbors\']` which
+        represents the graph as an adjacency matrix (can be sparse)
+        use `'paga'` to access PAGA connectivies graph or (prefix `'p:...'`)
+        to access `adata.uns['paga'][...]`
+        for `adata.uns['neighbors'][...]`, use prefix `'n:...'`
+    color_key: Str, optional (default: `None`)
+        categorical variable in `adata.obs` with which to color in each node
+    bases: Union[Str, List[Str]], optional (default: `None`)
+        bases in `adata.obsm`, if `None`, get all of them
+    components: Union[List[Int], List[List[Int]]], optional (default: `[1, 2]`)
+        components of specified `bases`
+        if it's of type `List[Int]`, all the bases have use the same components
+    obs_keys: List[Str], optional (default: `None`)
+        keys of categorical observations in `adata.obs`
+        if `None`, get all available, only visible when `hover_selection='nodes'`
+    ixs: List[Int], optiona (default: `None`)
+        list of indices of nodes of graph to visualize
+        if `None`, visualize all
+    filter_edges: Tuple[Float, Float], optional (default: `None`)
+        min and max threshold values for edge visualization
+        nodes without edges will *NOT* be removed
+    directed: Bool, optional (default: `True`)
+        whether the graph is directed or not
+    subsample: Str, optional (default: `None`)
+        subsampling strategies for edges
+        possible values are `None, \'none\', \'datashade\'`
+    bundle: Bool, optional (default: `False`)
+        whether to bundle edges together (can be computationally expensive)
+    bundle_kwargs: Dict, optional (defaul: `{}`)
+        kwargs for bundler, e.g. `iterations=1` (default `4`)
+        for more options, see `hv.operation.datashader.bundle_graph`
+    layouts: List[Str], optional (default: `None`)
+        layout names to use when drawing graph, e.g. `'umap'` in `adata.obsm`
+        or `'kamada_kawai'` from `nx.layouts`
+        if `None`, use all available layouts
+    layout_kwargs: Dict[Str, Dict], optional (default: `{}`)
+        kwargs for a given layout
+    force_paga_indices: Bool, optional (default: `False`)
+        by default, when `key='paga'`, all indices are used
+        regardless of what was specified
+    degree_by: Str, optional (default: `None`)
+        if `'weights'`, use edge weights when calculating the degree
+        only visible when `hover_selection='nodes'`
+    legend_loc: Str, optional (default: `'top_right'`)
+        locations of the legend, if `None`, do not show legend
+    node_size: Float, optional (default: `12`)
+        size of the graph nodes
+    edge_width: Float, optional (default: `2`)
+        width of the graph edges
+    arrowhead_length: Float, optional (default: `None`)
+        length of the arrow when `directed=True`
+    perc: List[Float], optional (default: `None`)
+        percentile for edge colors
+        *WARNING* this can remove nodes and will be fixed in the future
+    color_edges_by: Str, optional (default: `weight`)
+        whether to color edges, if `None` do not color edges
+    hover_selection: Str, optional (default: `'nodes'`)
+        whether to define hover over `'nodes'` or `'edges'`
+        if `subsample == 'datashade'`, it is always `'nodes'`
+    cat_cmap: List[Str], optional (default: `datashader.colors.Sets1to3`)
+        categorical colormap in hex format for `color_key`
+    cont_cmap: List[Str], optional (default: `bokeh.palettes.Viridis256`)
+        continuous colormap in hex format for edges
+    plot_height: Int, optional (default: `600`)
+        height of the plot in pixels
+    plot_width: Int, optional (default: `600`)
+        width of the plot in pixels
+
+    Returns
+    --------
+    plot: panel.Column
+        `hv.DynamicMap` wrapped in `panel.Column` that displays the graph in various layouts
+    '''
+
+    def normalize(emb):
+        # TODO: to this once
+        # normalize because of arrows...
+        emb = emb.copy()
+        x_min, y_min = np.min(emb[:, 0]), np.min(emb[:, 1])
+        emb[:, 0] = (emb[:, 0] - x_min) / (np.max(emb[:, 0]) - x_min)
+        emb[:, 1] = (emb[:, 1] - y_min) / (np.max(emb[:, 1]) - y_min)
+        return emb
+
+    def create_graph(adata, data):
+        if perc is not None:
+            data = percentile(data, perc)
+        create_using = nx.DiGraph if directed else nx.Graph
+        g = (nx.from_scipy_sparse_matrix if issparse(data)  else nx.from_numpy_array)(data, create_using=create_using)
+
+        min_weight, max_weight = np.min(data), np.max(data)
+        if  filter_edges is not None:
+            minn, maxx = filter_edges
+            minn = minn if minn is not None else -np.inf
+            maxx = maxx if maxx is not None else np.inf
+            for e, attr in list(g.edges.items()):
+                if attr['weight'] < minn or attr['weight'] > maxx:
+                    g.remove_edge(*e)
+
+        if not len(g.nodes):
+            raise RuntimeError('Empty graph.')
+
+        if not len(g.edges):
+            msg = 'No edges to visualize.'
+            if filter_edges is not None:
+                msg += f' Consider altering the edge filtering thresholds `{filter_edges}`.'
+            raise RuntimeError(msg)
+
+        if hover_selection == 'nodes':
+            if directed:
+                nx.set_node_attributes(g, values=dict(g.in_degree(weight=degree_by)),
+                                       name='indegree')
+                nx.set_node_attributes(g, values=dict(g.out_degree(weight=degree_by)),
+                                       name='outdegree')
+                nx.set_node_attributes(g, values=nx.in_degree_centrality(g),
+                                       name='indegree centrality')
+                nx.set_node_attributes(g, values=nx.out_degree_centrality(g),
+                                       name='outdegree centrality')
+            else:
+                nx.set_node_attributes(g, values=dict(g.degree(weight=degree_by)),
+                                       name='degree')
+                nx.set_node_attributes(g, values=nx.degree_centrality(g),
+                                       name='centrality')
+
+        if paga_pos is None:
+            nx.set_node_attributes(g, values=dict(zip(g.nodes.keys(), adata.obs.index)),
+                                   name='name')
+            for key in ([] if color_key is None else [color_key]) + list(obs_keys):
+                nx.set_node_attributes(g, values=dict(zip(g.nodes.keys(), adata.obs[key])),
+                                       name=key)
+        else:
+            nx.set_node_attributes(g, values=dict(zip(g.nodes.keys(), adata.obs[color_key].cat.categories)),
+                                   name=color_key)
+
+        return g
+
+    def embed_graph(layout_key, graph):
+        basis_key = f'X_{layout_key}'
+        if basis_key in adata.obsm:
+            emb = adata[ixs, :].obsm[basis_key][:, get_component[layout_key]]
+            emb = normalize(emb)
+            layout = dict(zip(graph.nodes.keys(), emb))
+            l_kwargs = {}
+        elif layout_key == 'paga':
+            layout = dict(zip(graph.nodes.keys(), paga_pos))
+            l_kwargs = {}
+        elif layout_key in DEFAULT_LAYOUTS:
+            layout = DEFAULT_LAYOUTS[layout_key]
+            l_kwargs = layout_kwargs.get(layout_key, {})
+
+        g = hv.Graph.from_networkx(graph, positions=layout, **l_kwargs)
+
+        g = g.opts(inspection_policy='nodes' if subsample == 'datashade' else hover_selection,
+                      tools=['hover', 'box_select'],
+                      edge_color=hv.dim(color_edges_by) if color_edges_by is not None else None,
+                      edge_line_width=edge_width * (hv.dim('weight') if paga_pos is not None else 1),
+                      edge_cmap=cont_cmap,
+                      node_color=color_key,
+                      node_cmap=cat_cmap,
+                      directed=directed,
+                      show_legend=legend_loc is not None
+        )
+        return g if arrowhead_length is None else g.opts(arrowhead_length=arrowhead_length)
+
+    def get_nodes(layout_key):  # DRY DRY DRY
+        nodes = bundled[layout_key].nodes
+        basis_key = f'X_{layout_key}'
+
+        if basis_key in adata.obsm:
+            emb = adata[ixs, :].obsm[basis_key][:, get_component[layout_key]]
+            emb = normalize(emb)
+            xlim = minmax(emb[:, 0])
+            ylim = minmax(emb[:, 1])
+        elif layout_key == 'paga':
+            xlim = minmax(paga_pos[:, 0])
+            ylim = minmax(paga_pos[:, 1])
+        else:
+            xlim, ylim = bundled[layout_key].range('x'), bundled[layout_key].range('y')
+
+        xlim, ylim = pad(*xlim), pad(*ylim)  # for datashade
+
+        # remove axes for datashade
+        return nodes.opts(xlim=xlim, ylim=ylim, xaxis=None, yaxis=None, show_legend=legend_loc is not None)
+
+    assert subsample in (None, 'none', 'datashade'), \
+        f'Invalid subsampling strategy `{subsample}`. Possible values are None, \'none\', \'datashade\'.`'
+
+    if cont_cmap is None:
+        cont_cmap = Viridis256
+    if cat_cmap is None:
+        cat_cmap = Sets1to3
+
+    if color_key is not None:
+        assert color_key in adata.obs, f'Color key `{color_key}` not found in `adata.obs`.'
+        assert is_categorical_dtype(adata.obs[color_key]), \
+        f'`adata.obs[\'{color_key}\']` must be categorical, found type `{infer_dtype(adata.obs[color_key])}`.'
+
+    if obs_keys is None:
+        obs_keys = adata.obs.keys()
+    else:
+        for obs_key in obs_keys:
+            assert obs_key in adata.obs.keys(), f'Key `{obs_key}` not found in `adata.obs`.'
+
+    if key.startswith('p:') or key.startswith('n:'):
+        which, key = key.split(':')
+    elif key == 'paga':  # QOL
+        which, key = 'p', 'connectivities'
+    else:
+        which = None
+
+    paga_pos = None
+    if which is None and key in adata.uns.keys():
+        data = adata.uns[key]
+    elif which == 'n' and key in adata.uns['neighbors'].keys():
+        data = adata.uns['neighbors'][key]
+    elif which == 'p' and key in adata.uns['paga'].keys():
+        data = adata.uns['paga'][key]
+        paga_pos = adata.uns['paga']['pos']
+        directed = False
+    else:
+        raise ValueError(f'Key `{key}` not found in `adata.uns` or '
+                         '`adata.uns[\'neighbors\']` or `adata.uns[\'paga\']`. '
+                         'To visualize the graphs in `uns[\'neighbors\']` or uns[\'paga\'] '
+                         'prefix the key with `n:` or `p:`, respectively (e.g. `n:connectivities`).')
+    assert data.ndim == 2, f'Adjacency matrix must be dimension of `2`, found `{adata.ndim}`.'
+    assert data.shape[0] == data.shape[1], 'Adjacency matrix is not square, found shape `{data.shape}`.'
+
+    if ixs is None or (paga_pos is not None and not force_paga_indices):
+        ixs = np.arange(data.shape[0])
+    else:
+        assert np.min(ixs) >= 0
+        assert np.max(ixs) < adata.shape[0]
+
+    data = data[ixs, :][:, ixs]
+
+    if layouts is None:
+        layouts = list(DEFAULT_LAYOUTS.keys())
+    if isinstance(layouts, str):
+        layouts = [layouts]
+    for l in layouts:
+        assert l in DEFAULT_LAYOUTS.keys(), f'Unknown layout `{l}`. Available layouts are `{list(DEFAULT_LAYOUTS.keys())}`.'
+
+    if np.min(data) < 0 and 'kamada_kawai' in layouts:
+        warnings.warn('`kamada_kawai` layout required non-negative edges, removing it from the list of possible layouts.')
+        layouts.remove('kamada_kawai')
+
+    if bases is None:
+        bases = np.ravel(sorted(filter(len, map(BASIS_PAT.findall, adata.obsm.keys()))))
+    elif not isinstance(bases, np.ndarray):
+        bases = np.array(bases)
+
+    if not isinstance(components, np.ndarray):
+        components = np.array(components)
+    if components.ndim == 1:
+        components = np.repeat(components[np.newaxis, :], len(bases), axis=0)
+    if len(bases):
+        components[np.where(bases != 'diffmap')] -= 1
+
+    if paga_pos is not None:
+        g_name = adata.uns['paga']['groups']
+        if color_key is None or color_key != g_name:
+            warnings.warn(f'Color key `{color_key}` differs from PAGA\'s groups `{g_name}`, setting it to `{g_name}`.')
+            color_key = g_name
+        if len(bases):
+            warnings.warn(f'Cannot plot PAGA in the bases `{bases}`, removing them from layouts.')
+            bases, components = [], []
+
+    for basis, comp in zip(bases, components):
+        shape = adata.obsm[f'X_{basis}'].shape
+        assert f'X_{basis}' in adata.obsm.keys(), f'`X_{basis}` not found in `adata.obsm`'
+        assert shape[-1] > np.max(comp), f'Requested invalid components `{list(comp)}` for basis `X_{basis}` with shape `{shape}`.'
+
+    if paga_pos is not None:
+        bases = ['paga']
+        components = [0, 1]
+    get_component = dict(zip(bases, components))
+
+    if color_key is not None:
+        cat_cmap = adata.uns[f'{color_key}_colors'] if f'{color_key}_colors' in adata.uns else cat_cmap
+        cat_cmap = odict(zip(adata.obs[color_key].cat.categories,
+                             to_hex_palette(cat_cmap)))
+
+    layouts = np.append(bases, layouts)
+    if len(layouts) == 0:
+        warnings.warn('Nothing to plot, no layouts found.')
+        return
+
+    graph = create_graph(adata, data=data)
+
+    kdims = [hv.Dimension('Layout', values=layouts)]
+    g = hv.DynamicMap(partial(embed_graph, graph=graph), kdims=kdims).opts(axiswise=True, framewise=True)  # necessary as well
+
+    if subsample != 'datashade':
+        for layout_key in layouts:
+            basis_key = f'X_{layout_key}'
+            if basis_key in adata.obsm:
+                emb = adata[ixs, :].obsm[basis_key][:, get_component[layout_key]]
+                emb = normalize(emb)
+                xlim = minmax(emb[:, 0])
+                ylim = minmax(emb[:, 1])
+            elif layout_key == 'paga':
+                xlim = minmax(paga_pos[:, 0])
+                ylim = minmax(paga_pos[:, 1])
+            else:
+                xlim, ylim = g[layout_key].range('x'), g[layout_key].range('y')
+            xlim, ylim = pad(*xlim), pad(*ylim)
+            g[layout_key].opts(xlim=xlim, ylim=ylim)  # other layouts are not normalized
+
+    bundled = bundle_graph(g, **bundle_kwargs, weight=None) if bundle else g.clone()
+    nodes = hv.DynamicMap(get_nodes, kdims=kdims).opts(axiswise=True, framewise=True)  # needed for datashade
+
+    if subsample == 'datashade':
+        g = (datashade(bundled, normalization='linear', color_key=color_edges_by, min_alpha=128,
+                       cmap='black' if color_edges_by is None else cont_cmap,
+                       streams=[hv.streams.RangeXY(transient=True), hv.streams.PlotSize]))
+        res = (g * nodes).opts(height=plot_height, width=plot_width).opts(
+            hv.opts.Nodes(size=node_size, tools=['hover'], cmap=cat_cmap,
+                          fill_color='orange' if color_key is None else color_key)
+        )
+    else:
+        res = bundled.opts(height=plot_height, width=plot_width).opts(
+            hv.opts.Graph(
+                node_size=node_size,
+                node_fill_color='orange' if color_key is None else color_key,
+                node_nonselection_alpha=0.05,
+                edge_nonselection_alpha=0.05,
+                edge_cmap=cont_cmap,
+                node_cmap=cat_cmap
+            )
+        )
+        if legend_loc is not None and color_key is not None:
+            res *= hv.NdOverlay({k: hv.Points([0,0], label=str(k)).opts(size=0, color=v)
+                                 for k, v in cat_cmap.items()})
+
+    if legend_loc is not None and color_key is not None:
+        res = res.opts(legend_position=legend_loc)
+
+    return res.opts(hv.opts.Graph(xaxis=None, yaxis=None))
