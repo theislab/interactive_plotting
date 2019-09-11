@@ -2,7 +2,7 @@
 
 
 ## About
-This repository contains 9 different interactive plotting functions, which may be useful during exploratory analysis.
+This repository contains 10 different interactive plotting functions, which may be useful during exploratory analysis.
 
 Almost every function provides some information when hovering over the plot and some parts of the plots can be hidden by clicking the legend.
 
@@ -16,7 +16,7 @@ pip install -e .
 
 ## Getting Started
 We recommend checking out the [tutorial notebook](./notebooks/interactive_plotting_tutorial.ipynb).
-```ipl.scatter```, ```ipl.scatterc``` and ```ipl.dpt``` can handle large number of cells (100K+).
+```ipl.scatter```, ```ipl.scatterc``` ```ipl.dpt``` can handle large number of cells (100K+).
 
 In your Jupyter Notebook, execute the following lines:
 ```python
@@ -49,6 +49,11 @@ ipt.scatterc
 ipt.dpt
 ```
 ![DPT plot](resources/images/dpt_plot.png?raw=true "DPT plot")
+
+```python
+ipt.graph
+```
+![Graph plot](resources/images/graph_plot.png?raw=true "Graph plot")
 
 ---
 
