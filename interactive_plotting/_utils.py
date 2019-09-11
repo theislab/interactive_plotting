@@ -5,9 +5,11 @@ from collections import Iterable
 from inspect import signature
 from sklearn.neighbors import NearestNeighbors
 
+import matplotlib.colors as colors
 import scanpy as sc
 import numpy as np
 import pandas as pd
+import networkx as nx
 import panel as pn
 import re
 import itertools
@@ -24,6 +26,13 @@ OBSM_SEP = ':'
 
 CBW = 10  # colorbar width
 BASIS_PAT = re.compile('^X_(.+)')
+
+# for graph
+DEFAULT_LAYOUTS = {l.split('_layout')[0]:getattr(nx.layout, l)
+                   for l in dir(nx.layout) if l.endswith('_layout')}
+DEFAULT_LAYOUTS.pop('bipartite')
+DEFAULT_LAYOUTS.pop('rescale')
+DEFAULT_LAYOUTS.pop('spectral')
 
 
 class SamplingLazyDict(dict):
@@ -51,6 +60,31 @@ class SamplingLazyDict(dict):
             return res
 
         return super().__getitem__(key)
+
+
+def to_hex_palette(palette, normalize=True):
+    """
+    Converts matplotlib color array to hex strings
+    """
+    if not isinstance(palette, np.ndarray):
+        palette = np.array(palette)
+
+    if isinstance(palette[0], str):
+        assert all(map(colors.is_color_like, palette)), 'Not all strings are color like.'
+        return palette
+
+    if normalize:
+        minn = np.min(palette)
+        # normalize to [0, 1]
+        palette = (palette - minn) / (np.max(palette) - minn)
+
+    return [colors.to_hex(c) if colors.is_color_like(c) else c for c in palette]
+
+
+def pad(minn, maxx, padding=0.05):
+    if minn > maxx:
+        maxx, minn = minn, maxx
+    return minn - padding, maxx + padding
 
 
 def iterable(obj):
