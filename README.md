@@ -29,7 +29,7 @@ from bokeh.io import output_notebook
 output_notebook()
 ```
 
-## Examples
+## Gallery
 Here are some exemplary figures for each of the plotting functions.
 ```python
 ipt.scatter
