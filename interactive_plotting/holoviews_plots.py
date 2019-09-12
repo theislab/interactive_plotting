@@ -946,7 +946,7 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
 
 @wrap_as_col
 def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[],
-          ixs=None, filter_edges=None, directed=True, bundle=False, bundle_kwargs={},
+          ixs=None, top_n_edges=None, filter_edges=None, directed=True, bundle=False, bundle_kwargs={},
           subsample=None, layouts=None, layout_kwargs={}, force_paga_indices=False,
           degree_by=None, legend_loc='top_right', node_size=12, edge_width=2, arrowhead_length=None,
           perc=None, color_edges_by='weight', hover_selection='nodes',
@@ -976,6 +976,11 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
     ixs: List[Int], optiona (default: `None`)
         list of indices of nodes of graph to visualize
         if `None`, visualize all
+    top_n_edges: Union[Int, Tuple[Int, Bool, Str]], optional (default: `None`)
+        only for directed graph
+        maximum number of outgoing edges per node to keep based on decreasing weight
+        if a tuple, the second element specifies whether it's ascending or not
+        the third one whether whether to consider outgoing ('out') or ('in') incoming edges
     filter_edges: Tuple[Float, Float], optional (default: `None`)
         min and max threshold values for edge visualization
         nodes without edges will *NOT* be removed
@@ -1047,13 +1052,29 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
         create_using = nx.DiGraph if directed else nx.Graph
         g = (nx.from_scipy_sparse_matrix if issparse(data)  else nx.from_numpy_array)(data, create_using=create_using)
 
-        min_weight, max_weight = np.min(data), np.max(data)
         if  filter_edges is not None:
             minn, maxx = filter_edges
             minn = minn if minn is not None else -np.inf
             maxx = maxx if maxx is not None else np.inf
             for e, attr in list(g.edges.items()):
                 if attr['weight'] < minn or attr['weight'] > maxx:
+                    g.remove_edge(*e)
+
+        to_keep = None
+        if top_n_edges is not None:
+            if isinstance(top_n_edges, (tuple, list)):
+                to_keep, ascending, group_by = top_n_edges
+            else:
+                to_keep, ascending, group_by = top_n_edges, False, 'out'
+
+            source, target = zip(*g.edges)
+            weights = [v['weight'] for v in g.edges.values()]
+            tmp = pd.DataFrame({'out': source, 'in': target, 'w': weights})
+
+            to_keep = set(map(tuple, tmp.groupby(group_by).apply(lambda g: g.sort_values('w', ascending=ascending).take(range(min(to_keep, len(g)))))[['out', 'in']].values))
+
+            for e in list(g.edges):
+                if e not in to_keep:
                     g.remove_edge(*e)
 
         if not len(g.nodes):
@@ -1063,6 +1084,8 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
             msg = 'No edges to visualize.'
             if filter_edges is not None:
                 msg += f' Consider altering the edge filtering thresholds `{filter_edges}`.'
+            if top_n_edges is not None:
+                msg += f' Perhaps use more top edges than `{to_keep}`.'
             raise RuntimeError(msg)
 
         if hover_selection == 'nodes':
@@ -1143,6 +1166,16 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
 
     assert subsample in (None, 'none', 'datashade'), \
         f'Invalid subsampling strategy `{subsample}`. Possible values are None, \'none\', \'datashade\'.`'
+
+    if top_n_edges is not None:
+        assert directed, f'`n_top_edges` works only on directed graphs.`'
+        if isinstance(top_n_edges, (tuple, list)):
+            assert len(top_n_edges) == 3, f'`top_n_edges` must be of length 3, found `{len(top_n_edges)}`.'
+            assert isinstance(top_n_edges[0], int), f'`top_n_edges[0]` must be an int, found `{type(top_n_edges[0])}`.'
+            assert isinstance(top_n_edges[1], bool), f'`top_n_edges[1]` must be a bool, found `{type(top_n_edges[1])}`.'
+            assert top_n_edges[2] in ('in', 'out') , '`top_n_edges[2]` must be either \'in\' or \'out\'.'
+        else:
+            assert isinstance(top_n_edges, int), f'`top_n_edges` must be an int, found `{type(top_n_edges)}`.'
 
     if cont_cmap is None:
         cont_cmap = Viridis256
