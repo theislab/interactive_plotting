@@ -1104,7 +1104,7 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
                 nx.set_node_attributes(g, values=nx.degree_centrality(g),
                                        name='centrality')
 
-        if paga_pos is None:
+        if not is_paga:
             nx.set_node_attributes(g, values=dict(zip(g.nodes.keys(), adata.obs.index)),
                                    name='name')
             for key in ([] if color_key is None else [color_key]) + list(obs_keys):
@@ -1118,8 +1118,8 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
 
     def embed_graph(layout_key, graph):
         basis_key = f'X_{layout_key}'
-        if basis_key in adata.obsm:
-            emb = adata[ixs, :].obsm[basis_key][:, get_component[layout_key]]
+        if basis_key in adata.obsm.keys():
+            emb = adata_ss.obsm[basis_key][:, get_component[layout_key]]
             emb = normalize(emb)
             layout = dict(zip(graph.nodes.keys(), emb))
             l_kwargs = {}
@@ -1148,8 +1148,8 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
         nodes = bundled[layout_key].nodes
         basis_key = f'X_{layout_key}'
 
-        if basis_key in adata.obsm:
-            emb = adata[ixs, :].obsm[basis_key][:, get_component[layout_key]]
+        if basis_key in adata.obsm.keys():
+            emb = adata_ss.obsm[basis_key][:, get_component[layout_key]]
             emb = normalize(emb)
             xlim = minmax(emb[:, 0])
             ylim = minmax(emb[:, 1])
@@ -1209,9 +1209,9 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
     elif which == 'p' and key in adata.uns['paga'].keys():
         data = adata.uns['paga'][key]
         is_paga = True
+        directed = False
         if 'pos' in adata.uns['paga'].keys():
             paga_pos = adata.uns['paga']['pos']
-        directed = False
     else:
         raise ValueError(f'Key `{key}` not found in `adata.uns` or '
                          '`adata.uns[\'neighbors\']` or `adata.uns[\'paga\']`. '
@@ -1227,6 +1227,7 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
         assert np.max(ixs) < adata.shape[0]
 
     data = data[ixs, :][:, ixs]
+    adata_ss = adata[ixs, :] if not is_paga or (len(ixs) != data.shape[0] and force_paga_indices) else adata
 
     if layouts is None:
         layouts = list(DEFAULT_LAYOUTS.keys())
@@ -1271,8 +1272,8 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
     get_component = dict(zip(bases, components))
 
     if color_key is not None:
-        cat_cmap = adata.uns[f'{color_key}_colors'] if f'{color_key}_colors' in adata.uns else cat_cmap
-        cat_cmap = odict(zip(adata[ixs, :].obs[color_key].cat.categories,
+        cat_cmap = adata_ss.uns[f'{color_key}_colors'] if f'{color_key}_colors' in adata_ss.uns else cat_cmap
+        cat_cmap = odict(zip(adata_ss.obs[color_key].cat.categories,
                              to_hex_palette(cat_cmap)))
 
     layouts = np.append(bases, layouts)
@@ -1280,7 +1281,8 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
         warnings.warn('Nothing to plot, no layouts found.')
         return
 
-    graph = create_graph(adata, data=data)
+    # because of the categories
+    graph = create_graph(adata_ss, data=data)
 
     kdims = [hv.Dimension('Layout', values=layouts)]
     g = hv.DynamicMap(partial(embed_graph, graph=graph), kdims=kdims).opts(axiswise=True, framewise=True)  # necessary as well
@@ -1288,8 +1290,8 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
     if subsample != 'datashade':
         for layout_key in layouts:
             basis_key = f'X_{layout_key}'
-            if basis_key in adata.obsm:
-                emb = adata[ixs, :].obsm[basis_key][:, get_component[layout_key]]
+            if basis_key in adata.obsm.keys():
+                emb = adata_ss.obsm[basis_key][:, get_component[layout_key]]
                 emb = normalize(emb)
                 xlim = minmax(emb[:, 0])
                 ylim = minmax(emb[:, 1])
@@ -1329,5 +1331,7 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
 
     if legend_loc is not None and color_key is not None:
         res = res.opts(legend_position=legend_loc)
+
+    labels = hv.Labels(nodes, ['x', 'y'], color_key)
 
     return res.opts(hv.opts.Graph(xaxis=None, yaxis=None))
