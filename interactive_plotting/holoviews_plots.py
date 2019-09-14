@@ -973,7 +973,7 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
     obs_keys: List[Str], optional (default: `None`)
         keys of categorical observations in `adata.obs`
         if `None`, get all available, only visible when `hover_selection='nodes'`
-    ixs: List[Int], optiona (default: `None`)
+    ixs: List[Int], optional (default: `None`)
         list of indices of nodes of graph to visualize
         if `None`, visualize all
     top_n_edges: Union[Int, Tuple[Int, Bool, Str]], optional (default: `None`)
@@ -1272,7 +1272,7 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
 
     if color_key is not None:
         cat_cmap = adata.uns[f'{color_key}_colors'] if f'{color_key}_colors' in adata.uns else cat_cmap
-        cat_cmap = odict(zip(adata.obs[color_key].cat.categories,
+        cat_cmap = odict(zip(adata[:, ixs].obs[color_key].cat.categories,
                              to_hex_palette(cat_cmap)))
 
     layouts = np.append(bases, layouts)
