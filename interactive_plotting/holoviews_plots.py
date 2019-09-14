@@ -1272,7 +1272,7 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
 
     if color_key is not None:
         cat_cmap = adata.uns[f'{color_key}_colors'] if f'{color_key}_colors' in adata.uns else cat_cmap
-        cat_cmap = odict(zip(adata[:, ixs].obs[color_key].cat.categories,
+        cat_cmap = odict(zip(adata[ixs, :].obs[color_key].cat.categories,
                              to_hex_palette(cat_cmap)))
 
     layouts = np.append(bases, layouts)
