@@ -5,7 +5,7 @@ from ._utils import *
 from collections import Iterable
 from collections import defaultdict, OrderedDict as odict
 
-from pandas.api.types import is_categorical_dtype, infer_dtype
+from pandas.api.types import is_categorical_dtype, is_string_dtype, infer_dtype
 from scipy.sparse import issparse
 from functools import partial
 from bokeh.palettes import Viridis256
@@ -13,6 +13,7 @@ from datashader.colors import Sets1to3
 from pandas.core.indexes.base import Index
 from holoviews.operation.datashader import datashade, bundle_graph, shade, dynspread, rasterize, spread
 from holoviews.operation import decimate
+from bokeh.transform import linear_cmap
 
 import scanpy as sc
 import numpy as np
@@ -944,13 +945,13 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
     return ((emb + emb_d)  + (hist + expr).opts(axiswise=True, framewise=True)).cols(2)
 
 
-@wrap_as_col
-def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[],
+# @wrap_as_col
+def graph(adata, key, bases=None, components=[1, 2], obs_keys=[], color_key=None, color_key_reduction=np.sum,
           ixs=None, top_n_edges=None, filter_edges=None, directed=True, bundle=False, bundle_kwargs={},
           subsample=None, layouts=None, layout_kwargs={}, force_paga_indices=False,
           degree_by=None, legend_loc='top_right', node_size=12, edge_width=2, arrowhead_length=None,
           perc=None, color_edges_by='weight', hover_selection='nodes',
-          cat_cmap=None, cont_cmap=None, plot_height=600, plot_width=600):
+          node_cmap=None, edge_cmap=None, plot_height=600, plot_width=600):
     '''
     Params
     --------
@@ -963,13 +964,17 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
         use `'paga'` to access PAGA connectivies graph or (prefix `'p:...'`)
         to access `adata.uns['paga'][...]`
         for `adata.uns['neighbors'][...]`, use prefix `'n:...'`
-    color_key: Str, optional (default: `None`)
-        categorical variable in `adata.obs` with which to color in each node
     bases: Union[Str, List[Str]], optional (default: `None`)
         bases in `adata.obsm`, if `None`, get all of them
     components: Union[List[Int], List[List[Int]]], optional (default: `[1, 2]`)
         components of specified `bases`
         if it's of type `List[Int]`, all the bases have use the same components
+    color_key: Str, optional (default: `None`)
+        variable in `adata.obs` with which to color in each node
+        or `'incoming'`, `'outgoing'` for coloring values based on weights
+    color_key_reduction: Callable, optional (default: `np.sum`)
+        a numpy function, such as `np.mean`, `np.max`, ... when
+        `color_key` is `'incoming'` or `'outgoing'`
     obs_keys: List[Str], optional (default: `None`)
         keys of categorical observations in `adata.obs`
         if `None`, get all available, only visible when `hover_selection='nodes'`
@@ -1022,9 +1027,9 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
     hover_selection: Str, optional (default: `'nodes'`)
         whether to define hover over `'nodes'` or `'edges'`
         if `subsample == 'datashade'`, it is always `'nodes'`
-    cat_cmap: List[Str], optional (default: `datashader.colors.Sets1to3`)
-        categorical colormap in hex format for `color_key`
-    cont_cmap: List[Str], optional (default: `bokeh.palettes.Viridis256`)
+    node_cmap: List[Str], optional (default: `datashader.colors.Sets1to3`)
+        colormap in hex format for `color_key`
+    edge_cmap: List[Str], optional (default: `bokeh.palettes.Viridis256`)
         continuous colormap in hex format for edges
     plot_height: Int, optional (default: `600`)
         height of the plot in pixels
@@ -1107,9 +1112,14 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
         if not is_paga:
             nx.set_node_attributes(g, values=dict(zip(g.nodes.keys(), adata.obs.index)),
                                    name='name')
-            for key in ([] if color_key is None else [color_key]) + list(obs_keys):
+            for key in list(obs_keys):
                 nx.set_node_attributes(g, values=dict(zip(g.nodes.keys(), adata.obs[key])),
                                        name=key)
+            if color_key is not None:
+                # color_vals has been set beforehand
+                nx.set_node_attributes(g, values=dict(zip(g.nodes.keys(), adata.obs[color_key] if color_key in adata.obs.keys() else color_vals)),
+                                       name=color_key)
+
         else:
             nx.set_node_attributes(g, values=dict(zip(g.nodes.keys(), adata.obs[color_key].cat.categories)),
                                    name=color_key)
@@ -1136,10 +1146,11 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
                       tools=['hover', 'box_select'],
                       edge_color=hv.dim(color_edges_by) if color_edges_by is not None else None,
                       edge_line_width=edge_width * (hv.dim('weight') if is_paga else 1),
-                      edge_cmap=cont_cmap,
+                      edge_cmap=edge_cmap,
                       node_color=color_key,
-                      node_cmap=cat_cmap,
+                      node_cmap=node_cmap,
                       directed=directed,
+                      colorbar=True,
                       show_legend=legend_loc is not None
         )
         return g if arrowhead_length is None else g.opts(arrowhead_length=arrowhead_length)
@@ -1177,15 +1188,15 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
         else:
             assert isinstance(top_n_edges, int), f'`top_n_edges` must be an int, found `{type(top_n_edges)}`.'
 
-    if cont_cmap is None:
-        cont_cmap = Viridis256
-    if cat_cmap is None:
-        cat_cmap = Sets1to3
+    if edge_cmap is None:
+        edge_cmap = Viridis256
+    if node_cmap is None:
+        node_cmap = Sets1to3
 
     if color_key is not None:
-        assert color_key in adata.obs, f'Color key `{color_key}` not found in `adata.obs`.'
-        assert is_categorical_dtype(adata.obs[color_key]), \
-        f'`adata.obs[\'{color_key}\']` must be categorical, found type `{infer_dtype(adata.obs[color_key])}`.'
+        assert color_key in adata.obs or color_key in ('incoming', 'outgoing'), f'Color key `{color_key}` not found in `adata.obs` and is not \'incoming\' or \'outgoing\'.'
+        #assert is_categorical_dtype(adata.obs[color_key]), \
+        #f'`adata.obs[\'{color_key}\']` must be categorical, found type `{infer_dtype(adata.obs[color_key])}`.'
 
     if obs_keys is None:
         obs_keys = adata.obs.keys()
@@ -1271,10 +1282,27 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
         components = [0, 1]
     get_component = dict(zip(bases, components))
 
+    is_categorical = False
     if color_key is not None:
-        cat_cmap = adata_ss.uns[f'{color_key}_colors'] if f'{color_key}_colors' in adata_ss.uns else cat_cmap
-        cat_cmap = odict(zip(adata_ss.obs[color_key].cat.categories,
-                             to_hex_palette(cat_cmap)))
+        node_cmap = adata_ss.uns[f'{color_key}_colors'] if f'{color_key}_colors' in adata_ss.uns else node_cmap
+        if color_key in adata.obs:
+            color_vals = adata_ss.obs[color_key]
+            if is_categorical_dtype(color_vals) or is_string_dtype(adata.obs[color_key]):
+                color_vals = color_vals.astype('category').cat.categories
+                is_categorical = True
+                node_cmap = odict(zip(color_vals, to_hex_palette(node_cmap)))
+            else:
+                color_vals = adata_ss.obs[color_key].values
+        else:
+            print(data.shape)
+            color_vals = np.array(color_key_reduction(data, axis=int(color_key == 'outgoing'))).flatten()
+
+        if not is_categorical:
+            color_key_map = linear_cmap(field_name=color_key, palette=node_cmap,
+                                       low=np.min(color_vals), high=np.max(color_vals))
+
+    if not is_categorical:
+        legend_loc = None
 
     layouts = np.append(bases, layouts)
     if len(layouts) == 0:
@@ -1308,10 +1336,10 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
 
     if subsample == 'datashade':
         g = (datashade(bundled, normalization='linear', color_key=color_edges_by, min_alpha=128,
-                       cmap='black' if color_edges_by is None else cont_cmap,
+                       cmap='black' if color_edges_by is None else edge_cmap,
                        streams=[hv.streams.RangeXY(transient=True), hv.streams.PlotSize]))
         res = (g * nodes).opts(height=plot_height, width=plot_width).opts(
-            hv.opts.Nodes(size=node_size, tools=['hover'], cmap=cat_cmap,
+            hv.opts.Nodes(size=node_size, tools=['hover'], cmap=node_cmap,
                           fill_color='orange' if color_key is None else color_key)
         )
     else:
@@ -1321,13 +1349,13 @@ def graph(adata, key, color_key=None, bases=None, components=[1, 2], obs_keys=[]
                 node_fill_color='orange' if color_key is None else color_key,
                 node_nonselection_alpha=0.05,
                 edge_nonselection_alpha=0.05,
-                edge_cmap=cont_cmap,
-                node_cmap=cat_cmap
+                edge_cmap=edge_cmap,
+                node_cmap=node_cmap
             )
         )
         if legend_loc is not None and color_key is not None:
             res *= hv.NdOverlay({k: hv.Points([0,0], label=str(k)).opts(size=0, color=v)
-                                 for k, v in cat_cmap.items()})
+                                 for k, v in node_cmap.items()})
 
     if legend_loc is not None and color_key is not None:
         res = res.opts(legend_position=legend_loc)
