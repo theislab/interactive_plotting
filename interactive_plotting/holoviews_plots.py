@@ -1141,7 +1141,6 @@ def graph(adata, key, bases=None, components=[1, 2], obs_keys=[], color_key=None
             l_kwargs = layout_kwargs.get(layout_key, {})
 
         g = hv.Graph.from_networkx(graph, positions=layout, **l_kwargs)
-
         g = g.opts(inspection_policy='nodes' if subsample == 'datashade' else hover_selection,
                       tools=['hover', 'box_select'],
                       edge_color=hv.dim(color_edges_by) if color_edges_by is not None else None,
@@ -1153,6 +1152,7 @@ def graph(adata, key, bases=None, components=[1, 2], obs_keys=[], color_key=None
                       colorbar=True,
                       show_legend=legend_loc is not None
         )
+
         return g if arrowhead_length is None else g.opts(arrowhead_length=arrowhead_length)
 
     def get_nodes(layout_key):  # DRY DRY DRY
@@ -1195,8 +1195,6 @@ def graph(adata, key, bases=None, components=[1, 2], obs_keys=[], color_key=None
 
     if color_key is not None:
         assert color_key in adata.obs or color_key in ('incoming', 'outgoing'), f'Color key `{color_key}` not found in `adata.obs` and is not \'incoming\' or \'outgoing\'.'
-        #assert is_categorical_dtype(adata.obs[color_key]), \
-        #f'`adata.obs[\'{color_key}\']` must be categorical, found type `{infer_dtype(adata.obs[color_key])}`.'
 
     if obs_keys is None:
         obs_keys = adata.obs.keys()

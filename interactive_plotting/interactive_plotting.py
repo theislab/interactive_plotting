@@ -459,6 +459,8 @@ def interactive_hist(adata, keys=['n_counts', 'n_genes'],
                 hist, edges = np.histogram(orig, density=True, bins=bins)
 
             slider.value = len(hist)
+            # case when automatic bins
+            max_bins = max(max_bins, slider.value)
 
             # original data, used for recalculation of histogram in JS code
             orig = ColumnDataSource(data=dict(values=orig))
@@ -481,6 +483,8 @@ def interactive_hist(adata, keys=['n_counts', 'n_genes'],
             # add the current plot so that we can set it
             # visible/invisible in JS code
             plots.append(p)
+
+        slider.end = max_bins
 
         # slider now updates all values
         slider.js_on_change('value', *callbacks)
