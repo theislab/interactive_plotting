@@ -2,8 +2,7 @@
 
 from ._utils import *
 
-from collections import Iterable
-from collections import defaultdict, OrderedDict as odict
+from collections import Iterable, ChainMap, defaultdict, OrderedDict as odict
 
 from pandas.api.types import is_categorical_dtype, is_string_dtype, infer_dtype
 from scipy.sparse import issparse
@@ -274,12 +273,6 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
     if cmap is None:
         cmap = Viridis256
 
-    lims = dict(x=dict(), y=dict())
-    for basis in bases:
-        emb = adata.obsm[f'X_{basis}']
-        lims['x'][basis] = minmax(emb[:, 0])
-        lims['y'][basis] = minmax(emb[:, 1])
-
     kdims = [hv.Dimension('Basis', values=bases),
              hv.Dimension('Condition', values=conditions),
              hv.Dimension('Percentile (lower)', range=(0, 100), step=0.1, type=float, default=0 if perc[0] is None else perc[0]),
@@ -529,8 +522,11 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
     lims = dict(x=dict(), y=dict())
     for basis in bases:
         emb = adata.obsm[f'X_{basis}']
-        lims['x'][basis] = minmax(emb[:, 0])
-        lims['y'][basis] = minmax(emb[:, 1])
+        is_diffmap = basis == 'diffmap'
+        if is_diffmap:
+            emb = (emb * 1000).copy()
+        lims['x'][basis] = minmax(emb[:, 0 + is_diffmap])
+        lims['y'][basis] = minmax(emb[:, 1 + is_diffmap])
 
     kdims = [hv.Dimension('Basis', values=bases),
              hv.Dimension('Condition', values=conditions)]
@@ -538,9 +534,13 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
     cmaps = dict()
     for cond in conditions:
         color_key = f'{cond}_colors'
-        # use the datashader default cmap since setting it doesn't work
-        cmaps[cond] = odict(zip(adata.obs[cond].cat.categories,
+        # use the datashader default cmap since setting it doesn't work (for multiple conditions)
+        cmaps[cond] = odict(zip(adata.obs[cond].cat.categories, # adata.uns.get(color_key, cmap)))
                                 cmap if subsample == 'datashade' else adata.uns.get(color_key, cmap)))
+    # this approach (for datashader) does not really work - the legend gets mixed up
+    # cmap = dict(ChainMap(*[c.copy() for c in cmaps.values()]))
+    # if len(cmap.keys()) != len([k for c in conditions for k in cmaps[c].keys()]):
+    #     warnings.warn('Found same key across multiple conditions. The colormap/legend may not accurately display the colors.')
 
     if not lazy_loading:
         # have to wrap because of the *args
@@ -945,7 +945,7 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
     return ((emb + emb_d)  + (hist + expr).opts(axiswise=True, framewise=True)).cols(2)
 
 
-# @wrap_as_col
+@wrap_as_col
 def graph(adata, key, bases=None, components=[1, 2], obs_keys=[], color_key=None, color_key_reduction=np.sum,
           ixs=None, top_n_edges=None, filter_edges=None, directed=True, bundle=False, bundle_kwargs={},
           subsample=None, layouts=None, layout_kwargs={}, force_paga_indices=False,
