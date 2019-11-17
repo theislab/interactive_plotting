@@ -13,6 +13,7 @@ from pandas.core.indexes.base import Index
 from holoviews.operation.datashader import datashade, bundle_graph, shade, dynspread, rasterize, spread
 from holoviews.operation import decimate
 from bokeh.transform import linear_cmap
+from bokeh.models import HoverTool
 
 import scanpy as sc
 import numpy as np
@@ -127,7 +128,7 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
         else:
             perc = None
 
-        ad = alazy[basis, tuple(comp)]
+        ad, _ = alazy[basis, tuple(comp)]
         ad_mraw = ad.raw if use_raw else ad
 
         # because diffmap has small range, it iterferes with
@@ -319,7 +320,7 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
 
 @wrap_as_panel
 def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
-             obsm_keys=None, subsample='datashade', steps=40, keep_frac=None, lazy_loading=True,
+             obsm_keys=None, subsample='datashade', steps=40, keep_frac=None, hover=False, lazy_loading=True,
              default_obsm_ixs=[0], sort=True, skip=True, seed=None, legend_loc='top_right', cols=None, size=4,
              cmap=None, show_legend=True, plot_height=400, plot_width=400):
     '''
@@ -351,6 +352,9 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
         larger step size corresponds to higher density of points
     keep_frac: Float, optional (default: `adata.n_obs / 5`)
         number of observations to keep when `subsample='decimate'`
+    hover: Union[Bool, Int], optional (default: `False`)
+        whether to display cell index when hovering over a block
+        if integer, it specifies the number of rows/columns (defualt: `10`)
     lazy_loading: Bool, optional (default: `False`)
         only visualize when necessary
         for notebook sharing, consider using `lazy_loading=False`
@@ -390,6 +394,22 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
         return hv.NdOverlay({k: hv.Points([0, 0], label=str(k)).opts(size=0, color=v, xlim=xlim, ylim=ylim)  # alpha affects legend
                              for k, v in cmaps[condition].items()})
 
+    def add_hover(subsampled, dynmaps=None, by_block=True):
+        hovertool = HoverTool(tooltips=[('Cell Index', '@index')])
+        hover_width, hover_height = (10, 10) if isinstance(hover, bool) else (hover, hover)
+
+        if by_block:
+            if dynmaps is None:
+                dynmaps = subsampled
+
+            return [s * hv.util.Dynamic(rasterize(d, width=hover_width, height=hover_height, streams=[hv.streams.RangeXY],
+                                                  aggregator=ds.reductions.min('index')), operation=hv.QuadMesh)\
+                                                          .opts(tools=[hovertool], axiswise=True, framewise=True, alpha=0, hover_alpha=0.25,
+                                                                height=plot_height, width=plot_width)
+                    for s, d in zip(subsampled, dynmaps)]
+
+        return [s.opts(tools=[hovertool]) for s in subsampled]
+
     def create_scatterplot(cond, *args, basis=None):
         ixs = np.where(bases == basis)[0][0]
         is_diffmap = basis == 'diffmap'
@@ -401,7 +421,7 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
             comp = np.array(components[ixs])  # need to make a copy
 
         # subsample is uniform or density
-        ad = alazy[basis, tuple(comp)]
+        ad, ixs = alazy[basis, tuple(comp)]
         # because diffmap has small range, it interferes with the legend
         emb = ad.obsm[f'X_{basis}'][:, comp] * (1000 if is_diffmap else 1)
         comp += not is_diffmap  # naming consistence
@@ -421,8 +441,8 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
             data = ad.obsm[cond][:, ix]
 
         data = pd.Categorical(data).as_ordered()
-        scatter = hv.Scatter({'x': emb[:, 0], 'y': emb[:, 1], 'cond': data},
-                             kdims=[x, y], vdims='cond').sort('cond')
+        scatter = hv.Scatter({'x': emb[:, 0], 'y': emb[:, 1], 'cond': data, 'index': ixs},
+                             kdims=[x, y], vdims=['cond', 'index']).sort('cond')
 
         return scatter.opts(color_index='cond', cmap=cmaps[cond],
                             show_legend=show_legend,
@@ -445,6 +465,9 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
         bases = np.array([bases])
     elif not isinstance(bases, np.ndarray):
         bases = np.array(bases)
+
+    if not isinstance(hover, bool):
+        assert hover > 1, f'Expected `hover` to be `> 1` when being an integer, found: `{hover}`.'
 
     assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
     assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
@@ -561,17 +584,25 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
 
     legend = None
     if subsample == 'datashade':
-        dynmaps = [dynspread(datashade(d, aggregator=ds.count_cat('cond'), color_key=cmap,
-                                       streams=[hv.streams.RangeXY(transient=True), hv.streams.PlotSize],
-                                       min_alpha=255).opts(axiswise=True, framewise=True), threshold=0.8, max_px=5)
-                   for d in dynmaps]
+        subsampled = [dynspread(datashade(d, aggregator=ds.count_cat('cond'), color_key=cmap,
+                                          streams=[hv.streams.RangeXY(transient=True), hv.streams.PlotSize],
+                                          min_alpha=255).opts(axiswise=True, framewise=True), threshold=0.8, max_px=5)
+                      for d in dynmaps]
+        dynmaps = add_hover(subsampled, dynmaps) if hover else subsampled
+
         if show_legend:
             warnings.warn('Automatic adjustment of axes is currently not working when '
                           '`show_legend=True` and `subsample=\'datashade\'`.')
             legend = hv.DynamicMap(create_legend, kdims=kdims[:2][::-1])
+        elif hover:
+            warnings.warn('Automatic adjustment of axes is currently not working when hovering is enabled.')
+
     elif subsample == 'decimate':
-        dynmaps = [decimate(d, max_samples=int(adata.n_obs * keep_frac),
-                            streams=[hv.streams.RangeXY(transient=True)], random_seed=seed) for d in dynmaps]
+        subsampled = [decimate(d, max_samples=int(adata.n_obs * keep_frac),
+                               streams=[hv.streams.RangeXY(transient=True)], random_seed=seed) for d in dynmaps]
+        dynmaps = add_hover(subsampled, by_block=False) if hover else subsampled
+    elif hover:
+        dynmaps = add_hover(dynmaps, by_block=False)
 
     if cols is None:
         dynmap = dynmaps[0].opts(title='', frame_height=plot_height, frame_width=plot_width, axiswise=True, framewise=True)
@@ -691,7 +722,7 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
         else:
             comp = np.array(components[ixs])  # need to make a copy
 
-        ad = alazy[basis, tuple(comp)]
+        ad, _ = alazy[basis, tuple(comp)]
         ad_mraw = ad.raw if use_raw else ad
 
         if perc_low is not None and perc_high is not None:
@@ -884,7 +915,7 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
     if cont_cmap is None:
         cont_cmap = Viridis256
 
-    kdims = [hv.Dimension('Root cell', values=(adata if root_cell_all else alazy[bases[0], tuple(components[0])]).obs_names),
+    kdims = [hv.Dimension('Root cell', values=(adata if root_cell_all else alazy[bases[0], tuple(components[0])][0]).obs_names),
              hv.Dimension('Gene', values=genes),
              hv.Dimension('Basis', values=bases)]
     cs = lambda cell, gene, basis, *args, **kwargs: create_scatterplot(cell, gene, basis, perc[0], perc[1], *args, **kwargs)

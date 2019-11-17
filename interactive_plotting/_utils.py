@@ -41,23 +41,28 @@ class SamplingLazyDict(dict):
         super().__init__(*args, **kwargs)
         self.adata = adata
         self.callback_kwargs = callback_kwargs
+
         if subsample == 'uniform':
             self.callback = sample_unif
         elif subsample == 'density':
             self.callback = sample_density
         else:
-            self.callback = lambda *args, **kwargs: adata
+            ixs = list(range(adata.n_obs))
+            self.callback = lambda *args, **kwargs: (adata, ixs)
 
     def __getitem__(self, key):
         if key not in self:
             basis, comps = key
             rev_comps = comps[::-1]
+
             if (basis, rev_comps) in self.keys():
-                res = self[basis, rev_comps]
+                res, ixs = self[basis, rev_comps]
             else:
-                res = self.callback(self.adata, basis=basis, components=comps, **self.callback_kwargs)
-            self[key] = res
-            return res
+                res, ixs = self.callback(self.adata, basis=basis, components=comps, **self.callback_kwargs)
+
+            self[key] = res, ixs
+
+            return res, ixs
 
         return super().__getitem__(key)
 
@@ -505,7 +510,7 @@ def sample_unif(adata, steps, basis='umap', components=[0, 1]):
     ixs = ixs[dist < min_dist]
     ixs = np.unique(ixs)
 
-    return adata[ixs].copy()
+    return adata[ixs].copy(), ixs
 
 
 def sample_density(adata, size, basis='umap', seed=None, components=[0, 1]):
@@ -530,4 +535,4 @@ def sample_density(adata, size, basis='umap', seed=None, components=[0, 1]):
     state = np.random.RandomState(seed)
     ixs = sorted(state.choice(range(adata.n_obs), size=size, p=tmp['prob_density'], replace=False))
 
-    return adata[ixs].copy()
+    return adata[ixs].copy(), ixs

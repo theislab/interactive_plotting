@@ -1047,9 +1047,9 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
     assert key in adata.obs.keys(), f'`{key}` not found in `adata.obs`.'
 
     if subsample == 'uniform':
-        adata = sample_unif(adata, steps, bases[0])
+        adata, _ = sample_unif(adata, steps, bases[0])
     elif subsample == 'density':
-        adata = sample_density(adata, sample_size, bases[0], seed=seed)
+        adata, _ = sample_density(adata, sample_size, bases[0], seed=seed)
     elif subsample is not None:
         raise ValueError(f'Unknown subsample strategy: `{subsample}`.')
 
