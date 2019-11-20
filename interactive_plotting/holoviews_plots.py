@@ -33,7 +33,7 @@ except AssertionError:
 #TODO: DRY
 
 @wrap_as_panel
-def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
+def scatter(adata, genes=None, basis=None, components=[1, 2], obs_keys=None,
             obsm_keys=None, use_raw=False, subsample='datashade', steps=40, keep_frac=None, lazy_loading=True,
             default_obsm_ixs=[0], sort=True, skip=True, seed=None, cols=None, size=4,
             perc=None, show_perc=True, cmap=None, plot_height=400, plot_width=400):
@@ -47,11 +47,11 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
     genes: List[Str], optional (default: `None`)
         list of genes to add for visualization
         if `None`, use `adata.var_names`
-    bases: Union[Str, List[Str]], optional (default: `None`)
-        bases in `adata.obsm`, if `None`, get all available
+    basis: Union[Str, List[Str]], optional (default: `None`)
+        basis in `adata.obsm`, if `None`, get all available
     components: Union[List[Int], List[List[Int]]], optional (default: `[1, 2]`)
-        components of specified `bases`
-        if it's of type `List[Int]`, all the bases have use the same components
+        components of specified `basis`
+        if it's of type `List[Int]`, all the basis have use the same components
     obs_keys: List[Str], optional (default: `None`)
         keys of categorical observations in `adata.obs`
         if `None`, get all available
@@ -65,7 +65,7 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
         possible values are `None, 'none', 'datashade', 'decimate', 'density', 'uniform'`
         using `subsample='datashade'` is preferred over other options since it does not subset
         when using `subsample='datashade'`, colorbar is not visible
-        `'density'` and `'uniform'` use first element of `bases` for their computation
+        `'density'` and `'uniform'` use first element of `basis` for their computation
     steps: Union[Int, Tuple[Int, Int]], optional (default: `40`)
         step size when the embedding directions
         larger step size corresponds to higher density of points
@@ -86,7 +86,7 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
     seed: Int, optional (default: `None`)
         random seed, used when `subsample='decimate'``
     cols: Int, optional (default: `2`)
-        number of columns when plotting bases
+        number of columns when plotting basis
         if `None`, use togglebar
     size: Int, optional (default: `4`)
         size of the glyphs
@@ -111,13 +111,13 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
         holoviews plot wrapped in `panel.panel`
     '''
 
-    def create_scatterplot(gene, perc_low, perc_high, *args, basis=None):
-        ixs = np.where(bases == basis)[0][0]
-        is_diffmap = basis == 'diffmap'
+    def create_scatterplot(gene, perc_low, perc_high, *args, bs=None):
+        ixs = np.where(basis == bs)[0][0]
+        is_diffmap = bs == 'diffmap'
 
         if len(args) > 0:
-            ixs = np.where(bases == basis)[0][0] * 2
-            comp = (np.array([args[ixs], args[ixs + 1]]) - (not is_diffmap)) % adata.obsm[f'X_{basis}'].shape[-1]
+            ixs = np.where(basis == bs)[0][0] * 2
+            comp = (np.array([args[ixs], args[ixs + 1]]) - (not is_diffmap)) % adata.obsm[f'X_{bs}'].shape[-1]
         else:
             comp = np.array(components[ixs])  # need to make a copy
 
@@ -128,17 +128,17 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
         else:
             perc = None
 
-        ad, _ = alazy[basis, tuple(comp)]
+        ad, _ = alazy[bs, tuple(comp)]
         ad_mraw = ad.raw if use_raw else ad
 
         # because diffmap has small range, it iterferes with
         # the legend created
-        emb = ad.obsm[f'X_{basis}'][:, comp] * (1000 if is_diffmap else 1)
+        emb = ad.obsm[f'X_{bs}'][:, comp] * (1000 if is_diffmap else 1)
         comp += not is_diffmap  # naming consistence
 
-        basisu = basis.upper()
-        x = hv.Dimension('x', label=f'{basisu}{comp[0]}')
-        y = hv.Dimension('y', label=f'{basisu}{comp[1]}')
+        bsu = bs.upper()
+        x = hv.Dimension('x', label=f'{bsu}{comp[0]}')
+        y = hv.Dimension('y', label=f'{bsu}{comp[1]}')
 
         #if ignore_after is not None and ignore_after in gene:
         if gene in ad.obsm.keys():
@@ -165,12 +165,12 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
                             clim=minmax(data, perc=perc),
                             xlim=minmax(emb[:, 0]),
                             ylim=minmax(emb[:, 1]),
-                            xlabel=f'{basisu}{comp[0]}',
-                            ylabel=f'{basisu}{comp[1]}')
+                            xlabel=f'{bsu}{comp[0]}',
+                            ylabel=f'{bsu}{comp[1]}')
 
-    def _create_scatterplot_nl(basis, gene, perc_low, perc_high, *args):
+    def _create_scatterplot_nl(bs, gene, perc_low, perc_high, *args):
         # arg switching
-        return create_scatterplot(gene, perc_low, perc_high, *args, basis=basis)
+        return create_scatterplot(gene, perc_low, perc_high, *args, bs=bs)
 
     if perc is None:
         perc = [None, None]
@@ -181,12 +181,12 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
     if keep_frac is None:
         keep_frac = 0.2
 
-    if bases is None:
-        bases = np.ravel(sorted(filter(len, map(BASIS_PAT.findall, adata.obsm.keys()))))
-    elif isinstance(bases, str):
-        bases = np.array([bases])
-    elif not isinstance(bases, np.ndarray):
-        bases = np.array(bases)
+    if basis is None:
+        basis = np.ravel(sorted(filter(len, map(BS_PAT.findall, adata.obsm.keys()))))
+    elif isinstance(basis, str):
+        basis = np.array([basis])
+    elif not isinstance(basis, np.ndarray):
+        basis = np.array(basis)
 
     assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
     assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
@@ -247,23 +247,23 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
     if not isinstance(components, np.ndarray):
         components = np.array(components)
     if components.ndim == 1:
-        components = np.repeat(components[np.newaxis, :], len(bases), axis=0)
+        components = np.repeat(components[np.newaxis, :], len(basis), axis=0)
 
     assert components.ndim == 2, f'Only `2` dimensional components are supported, got `{components.ndim}`.'
     assert components.shape[-1] == 2, f'Components\' second dimension must be of size `2`, got `{components.shape[-1]}`.'
-    if not isinstance(bases, np.ndarray):
-        bases = np.array(bases)
+    if not isinstance(basis, np.ndarray):
+        basis = np.array(basis)
 
-    assert components.shape[0] == len(bases), f'Expected #components == `{len(bases)}`, got `{components.shape[0]}`.'
+    assert components.shape[0] == len(basis), f'Expected #components == `{len(basis)}`, got `{components.shape[0]}`.'
     assert np.all(components >= 0), f'Currently, only positive indices are supported, found `{list(map(list, components))}`.'
 
-    diffmap_ix = np.where(bases != 'diffmap')[0]
+    diffmap_ix = np.where(basis != 'diffmap')[0]
     components[diffmap_ix, :] -= 1
 
-    for basis, comp in zip(bases, components):
-        shape = adata.obsm[f'X_{basis}'].shape
-        assert f'X_{basis}' in adata.obsm.keys(), f'`X_{basis}` not found in `adata.obsm`'
-        assert shape[-1] > np.max(comp), f'Requested invalid components `{list(comp)}` for basis `X_{basis}` with shape `{shape}`.'
+    for bs, comp in zip(basis, components):
+        shape = adata.obsm[f'X_{bs}'].shape
+        assert f'X_{bs}' in adata.obsm.keys(), f'`X_{bs}` not found in `adata.obsm`'
+        assert shape[-1] > np.max(comp), f'Requested invalid components `{list(comp)}` for bs `X_{bs}` with shape `{shape}`.'
 
     if adata.n_obs > SUBSAMPLE_THRESH and subsample in NO_SUBSAMPLE:
         warnings.warn(f'Number of cells `{adata.n_obs}` > `{SUBSAMPLE_THRESH}`. Consider specifying `subsample={SUBSAMPLING_STRATEGIES}`.')
@@ -274,7 +274,7 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
     if cmap is None:
         cmap = Viridis256
 
-    kdims = [hv.Dimension('Basis', values=bases),
+    kdims = [hv.Dimension('bs', values=basis),
              hv.Dimension('Condition', values=conditions),
              hv.Dimension('Percentile (lower)', range=(0, 100), step=0.1, type=float, default=0 if perc[0] is None else perc[0]),
              hv.Dimension('Percentile (upper)', range=(0, 100), step=0.1, type=float, default=100 if perc[1] is None else perc[1])]
@@ -284,22 +284,22 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
     if not show_perc or subsample == 'datashade' or not lazy_loading:
         kdims = kdims[:2]
         cs = lambda gene, *args, **kwargs: create_scatterplot(gene, perc[0], perc[1], *args, **kwargs)
-        _cs = lambda basis, gene, *args, **kwargs: _create_scatterplot_nl(basis, gene, perc[0], perc[1], *args, **kwargs)
+        _cs = lambda bs, gene, *args, **kwargs: _create_scatterplot_nl(bs, gene, perc[0], perc[1], *args, **kwargs)
 
     if not lazy_loading:
-        dynmaps = [hv.HoloMap({(g, b):cs(g, basis=b) for g in conditions for b in bases}, kdims=kdims[::-1])]
+        dynmaps = [hv.HoloMap({(g, b):cs(g, bs=b) for g in conditions for b in basis}, kdims=kdims[::-1])]
     else:
-        for basis, comp in zip(bases, components):
-            kdims.append(hv.Dimension(f'{basis.upper()}[X]',
+        for bs, comp in zip(basis, components):
+            kdims.append(hv.Dimension(f'{bs.upper()}[X]',
                                       type=int, default=1, step=1,
-                                      range=(1, adata.obsm[f'X_{basis}'].shape[-1])))
-            kdims.append(hv.Dimension(f'{basis.upper()}[Y]',
+                                      range=(1, adata.obsm[f'X_{bs}'].shape[-1])))
+            kdims.append(hv.Dimension(f'{bs.upper()}[Y]',
                                       type=int, default=2, step=1,
-                                      range=(1, adata.obsm[f'X_{basis}'].shape[-1])))
+                                      range=(1, adata.obsm[f'X_{bs}'].shape[-1])))
         if cols is None:
             dynmaps = [hv.DynamicMap(_cs, kdims=kdims)]
         else:
-            dynmaps = [hv.DynamicMap(partial(cs, basis=basis), kdims=kdims[1:]) for basis in bases]
+            dynmaps = [hv.DynamicMap(partial(cs, bs=bs), kdims=kdims[1:]) for bs in basis]
 
     if subsample == 'datashade':
         dynmaps = [dynspread(datashade(d, aggregator=ds.mean('gene'), color_key='gene',
@@ -319,7 +319,7 @@ def scatter(adata, genes=None, bases=None, components=[1, 2], obs_keys=None,
 
 
 @wrap_as_panel
-def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
+def scatterc(adata, basis=None, components=[1, 2], obs_keys=None,
              obsm_keys=None, subsample='datashade', steps=40, keep_frac=None, hover=False, lazy_loading=True,
              default_obsm_ixs=[0], sort=True, skip=True, seed=None, legend_loc='top_right', cols=None, size=4,
              cmap=None, show_legend=True, plot_height=400, plot_width=400):
@@ -330,11 +330,11 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
     --------
     adata: anndata.Anndata
         anndata object
-    bases: Union[Str, List[Str]], optional (default: `None`)
-        bases in `adata.obsm`, if `None`, get all available
+    basis: Union[Str, List[Str]], optional (default: `None`)
+        basis in `adata.obsm`, if `None`, get all available
     components: Union[List[Int], List[List[Int]]], optional (default: `[1, 2]`)
-        components of specified `bases`
-        if it's of type `List[Int]`, all the bases have use the same components
+        components of specified `basis`
+        if it's of type `List[Int]`, all the basis have use the same components
     obs_keys: List[Str], optional (default: `None`)
         keys of categorical observations in `adata.obs`
         if `None`, get all available
@@ -346,7 +346,7 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
         possible values are `None, 'none', 'datashade', 'decimate', 'density', 'uniform'`
         using `subsample='datashade'` is preferred over other options since it does not subset
         when using `subsample='datashade'`, colorbar is not visible
-        `'density'` and `'uniform'` use first element of `bases` for their computation
+        `'density'` and `'uniform'` use first element of `basis` for their computation
     steps: Union[Int, Tuple[Int, Int]], optional (default: `40`)
         step size when the embedding directions
         larger step size corresponds to higher density of points
@@ -368,7 +368,7 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
     legend_loc: Str, optional (default: `top_right`)
         position of the legend
     cols: Int, optional (default: `None`)
-        number of columns when plotting bases
+        number of columns when plotting basis
         if `None`, use togglebar
     size: Int, optional (default: `4`)
         size of the glyphs
@@ -386,10 +386,10 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
         holoviews plot wrapped in `panel.panel`
     '''
 
-    def create_legend(condition, basis):
+    def create_legend(condition, bs):
         # slightly hacky solution to get the correct initial limits
-        xlim = lims['x'][basis]
-        ylim = lims['y'][basis]
+        xlim = lims['x'][bs]
+        ylim = lims['y'][bs]
 
         return hv.NdOverlay({k: hv.Points([0, 0], label=str(k)).opts(size=0, color=v, xlim=xlim, ylim=ylim)  # alpha affects legend
                              for k, v in cmaps[condition].items()})
@@ -410,25 +410,25 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
 
         return [s.opts(tools=[hovertool]) for s in subsampled]
 
-    def create_scatterplot(cond, *args, basis=None):
-        ixs = np.where(bases == basis)[0][0]
-        is_diffmap = basis == 'diffmap'
+    def create_scatterplot(cond, *args, bs=None):
+        ixs = np.where(basis == bs)[0][0]
+        is_diffmap = bs == 'diffmap'
 
         if len(args) > 0:
-            ixs = np.where(bases == basis)[0][0] * 2
-            comp = (np.array([args[ixs], args[ixs + 1]]) - (not is_diffmap)) % adata.obsm[f'X_{basis}'].shape[-1]
+            ixs = np.where(basis == bs)[0][0] * 2
+            comp = (np.array([args[ixs], args[ixs + 1]]) - (not is_diffmap)) % adata.obsm[f'X_{bs}'].shape[-1]
         else:
             comp = np.array(components[ixs])  # need to make a copy
 
         # subsample is uniform or density
-        ad, ixs = alazy[basis, tuple(comp)]
+        ad, ixs = alazy[bs, tuple(comp)]
         # because diffmap has small range, it interferes with the legend
-        emb = ad.obsm[f'X_{basis}'][:, comp] * (1000 if is_diffmap else 1)
+        emb = ad.obsm[f'X_{bs}'][:, comp] * (1000 if is_diffmap else 1)
         comp += not is_diffmap  # naming consistence
 
-        basisu = basis.upper()
-        x = hv.Dimension('x', label=f'{basisu}{comp[0]}')
-        y = hv.Dimension('y', label=f'{basisu}{comp[1]}')
+        bsu = bs.upper()
+        x = hv.Dimension('x', label=f'{bsu}{comp[0]}')
+        y = hv.Dimension('y', label=f'{bsu}{comp[1]}')
 
         #if ignore_after is not None and ignore_after in gene:
         if cond in ad.obsm.keys():
@@ -450,21 +450,21 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
                             size=size,
                             xlim=minmax(emb[:, 0]),
                             ylim=minmax(emb[:, 1]),
-                            xlabel=f'{basisu}{comp[0]}',
-                            ylabel=f'{basisu}{comp[1]}')
+                            xlabel=f'{bsu}{comp[0]}',
+                            ylabel=f'{bsu}{comp[1]}')
 
-    def _cs(basis, cond, *args):
-        return create_scatterplot(cond, *args, basis=basis)
+    def _cs(bs, cond, *args):
+        return create_scatterplot(cond, *args, bs=bs)
 
     if keep_frac is None:
         keep_frac = 0.2
 
-    if bases is None:
-        bases = np.ravel(sorted(filter(len, map(BASIS_PAT.findall, adata.obsm.keys()))))
-    elif isinstance(bases, str):
-        bases = np.array([bases])
-    elif not isinstance(bases, np.ndarray):
-        bases = np.array(bases)
+    if basis is None:
+        basis = np.ravel(sorted(filter(len, map(BS_PAT.findall, adata.obsm.keys()))))
+    elif isinstance(basis, str):
+        basis = np.array([basis])
+    elif not isinstance(basis, np.ndarray):
+        basis = np.array(basis)
 
     if not isinstance(hover, bool):
         assert hover > 1, f'Expected `hover` to be `> 1` when being an integer, found: `{hover}`.'
@@ -517,21 +517,21 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
     if not isinstance(components, np.ndarray):
         components = np.array(components)
     if components.ndim == 1:
-        components = np.repeat(components[np.newaxis, :], len(bases), axis=0)
+        components = np.repeat(components[np.newaxis, :], len(basis), axis=0)
 
     assert components.ndim == 2, f'Only `2` dimensional components are supported, got `{components.ndim}`.'
     assert components.shape[-1] == 2, f'Components\' second dimension must be of size `2`, got `{components.shape[-1]}`.'
 
-    assert components.shape[0] == len(bases), f'Expected #components == `{len(bases)}`, got `{components.shape[0]}`.'
+    assert components.shape[0] == len(basis), f'Expected #components == `{len(basis)}`, got `{components.shape[0]}`.'
     assert np.all(components >= 0), f'Currently, only positive indices are supported, found `{list(map(list, components))}`.'
 
-    diffmap_ix = np.where(bases != 'diffmap')[0]
+    diffmap_ix = np.where(basis != 'diffmap')[0]
     components[diffmap_ix, :] -= 1
 
-    for basis, comp in zip(bases, components):
-        shape = adata.obsm[f'X_{basis}'].shape
-        assert f'X_{basis}' in adata.obsm.keys(), f'`X_{basis}` not found in `adata.obsm`'
-        assert shape[-1] > np.max(comp), f'Requested invalid components `{list(comp)}` for basis `X_{basis}` with shape `{shape}`.'
+    for bs, comp in zip(basis, components):
+        shape = adata.obsm[f'X_{bs}'].shape
+        assert f'X_{bs}' in adata.obsm.keys(), f'`X_{bs}` not found in `adata.obsm`'
+        assert shape[-1] > np.max(comp), f'Requested invalid components `{list(comp)}` for bs `X_{bs}` with shape `{shape}`.'
 
     if adata.n_obs > SUBSAMPLE_THRESH and subsample in NO_SUBSAMPLE:
         warnings.warn(f'Number of cells `{adata.n_obs}` > `{SUBSAMPLE_THRESH}`. Consider specifying `subsample={SUBSAMPLING_STRATEGIES}`.')
@@ -543,15 +543,15 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
         cmap = Sets1to3
 
     lims = dict(x=dict(), y=dict())
-    for basis in bases:
-        emb = adata.obsm[f'X_{basis}']
-        is_diffmap = basis == 'diffmap'
+    for bs in basis:
+        emb = adata.obsm[f'X_{bs}']
+        is_diffmap = bs == 'diffmap'
         if is_diffmap:
             emb = (emb * 1000).copy()
-        lims['x'][basis] = minmax(emb[:, 0 + is_diffmap])
-        lims['y'][basis] = minmax(emb[:, 1 + is_diffmap])
+        lims['x'][bs] = minmax(emb[:, 0 + is_diffmap])
+        lims['y'][bs] = minmax(emb[:, 1 + is_diffmap])
 
-    kdims = [hv.Dimension('Basis', values=bases),
+    kdims = [hv.Dimension('bs', values=basis),
              hv.Dimension('Condition', values=conditions)]
 
     cmaps = dict()
@@ -567,20 +567,20 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
 
     if not lazy_loading:
         # have to wrap because of the *args
-        dynmaps = [hv.HoloMap({(c, b):create_scatterplot(c, basis=b) for c in conditions for b in bases}, kdims=kdims[::-1])]
+        dynmaps = [hv.HoloMap({(c, b):create_scatterplot(c, bs=b) for c in conditions for b in basis}, kdims=kdims[::-1])]
     else:
-        for basis, comp in zip(bases, components):
-            kdims.append(hv.Dimension(f'{basis.upper()}[X]',
+        for bs, comp in zip(basis, components):
+            kdims.append(hv.Dimension(f'{bs.upper()}[X]',
                                       type=int, default=1, step=1,
-                                      range=(1, adata.obsm[f'X_{basis}'].shape[-1])))
-            kdims.append(hv.Dimension(f'{basis.upper()}[Y]',
+                                      range=(1, adata.obsm[f'X_{bs}'].shape[-1])))
+            kdims.append(hv.Dimension(f'{bs.upper()}[Y]',
                                       type=int, default=2, step=1,
-                                      range=(1, adata.obsm[f'X_{basis}'].shape[-1])))
+                                      range=(1, adata.obsm[f'X_{bs}'].shape[-1])))
 
         if cols is None:
             dynmaps = [hv.DynamicMap(_cs, kdims=kdims)]
         else:
-            dynmaps = [hv.DynamicMap(partial(create_scatterplot, basis=basis), kdims=kdims[1:]) for basis in bases]
+            dynmaps = [hv.DynamicMap(partial(create_scatterplot, bs=bs), kdims=kdims[1:]) for bs in basis]
 
     legend = None
     if subsample == 'datashade':
@@ -611,7 +611,7 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
     else:
         if legend is not None:
             dynmaps = [(d * l).opts(legend_position=legend_loc)
-                       for d, l in zip(dynmaps, legend.layout('Basis'))]
+                       for d, l in zip(dynmaps, legend.layout('bs'))]
 
         dynmap = hv.Layout([d.opts(axiswise=True, framewise=True,
                                    frame_height=plot_height, frame_width=plot_width) for d in dynmaps])
@@ -620,7 +620,7 @@ def scatterc(adata, bases=None, components=[1, 2], obs_keys=None,
 
 
 @wrap_as_col
-def dpt(adata, key, genes=None, bases=None, components=[1, 2],
+def dpt(adata, key, genes=None, basis=None, components=[1, 2],
         subsample='datashade', steps=40, use_raw=False, keep_frac=None,
         sort=True, skip=True, seed=None, show_legend=True, root_cell_all=False,
         root_cell_hl=True, root_cell_bbox=True, root_cell_size=None, root_cell_color='orange',
@@ -640,11 +640,11 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
     genes: List[Str], optional (default: `None`)
         list of genes to add for visualization
         if `None`, use `adata.var_names`
-    bases: Union[Str, List[Str]], optional (default: `None`)
-        bases in `adata.obsm`, if `None`, get all available
+    basis: Union[Str, List[Str]], optional (default: `None`)
+        basis in `adata.obsm`, if `None`, get all available
     components: Union[List[Int], List[List[Int]]], optional (default: `[1, 2]`)
-        components of specified `bases`
-        if it's of type `List[Int]`, all the bases have use the same components
+        components of specified `basis`
+        if it's of type `List[Int]`, all the basis have use the same components
     use_raw: Bool, optional (default: `False`)
         use `adata.raw` for gene expression levels
     subsample: Str, optional (default: `'datashade'`)
@@ -652,7 +652,7 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
         possible values are `None, 'none', 'datashade', 'decimate', 'density', 'uniform'`
         using `subsample='datashade'` is preferred over other options since it does not subset
         when using `subsample='datashade'`, colorbar is not visible
-        `'density'` and `'uniform'` use first element of `bases` for their computation
+        `'density'` and `'uniform'` use first element of `basis` for their computation
     steps: Union[Int, Tuple[Int, Int]], optional (default: `40`)
         step size when the embedding directions
         larger step size corresponds to higher density of points
@@ -670,7 +670,7 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
     legend_loc: Str, optional (default: `top_right`)
         position of the legend
     cols: Int, optional (default: `None`)
-        number of columns when plotting bases
+        number of columns when plotting basis
         if `None`, use togglebar
     size: Int, optional (default: `4`)
         size of the glyphs
@@ -690,7 +690,7 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
     root_cell_all: Bool, optional (default: `False`)
         show all root cells, even though they might not be in the embedding
         (e.g. when subsample='uniform' or 'density')
-        otherwise only show in the embedding (based on the data of 1st basis in `bases`)
+        otherwise only show in the embedding (based on the data of 1st bs in `basis`)
     root_cell_hl: Bool, optional (default: `True`)
         highlight the root cell
     root_cell_bbox: Bool, optional (default: `True`)
@@ -712,17 +712,17 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
         holoviews plot wrapped in `panel.Column`
     '''
 
-    def create_scatterplot(root_cell, gene, basis, perc_low, perc_high, *args, typp='expr', ret_hl=False):
-        ixs = np.where(bases == basis)[0][0]
-        is_diffmap = basis == 'diffmap'
+    def create_scatterplot(root_cell, gene, bs, perc_low, perc_high, *args, typp='expr', ret_hl=False):
+        ixs = np.where(basis == bs)[0][0]
+        is_diffmap = bs == 'diffmap'
 
         if len(args) > 0:
-            ixs = np.where(bases == basis)[0][0] * 2
-            comp = (np.array([args[ixs], args[ixs + 1]]) - (not is_diffmap)) % adata.obsm[f'X_{basis}'].shape[-1]
+            ixs = np.where(basis == bs)[0][0] * 2
+            comp = (np.array([args[ixs], args[ixs + 1]]) - (not is_diffmap)) % adata.obsm[f'X_{bs}'].shape[-1]
         else:
             comp = np.array(components[ixs])  # need to make a copy
 
-        ad, _ = alazy[basis, tuple(comp)]
+        ad, _ = alazy[bs, tuple(comp)]
         ad_mraw = ad.raw if use_raw else ad
 
         if perc_low is not None and perc_high is not None:
@@ -734,12 +734,12 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
 
         # because diffmap has small range, it iterferes with
         # the legend created
-        emb = ad.obsm[f'X_{basis}'][:, comp] * (1000 if is_diffmap else 1)
+        emb = ad.obsm[f'X_{bs}'][:, comp] * (1000 if is_diffmap else 1)
         comp += not is_diffmap  # naming consistence
 
-        basisu = basis.upper()
-        x = hv.Dimension('x', label=f'{basisu}{comp[0]}')
-        y = hv.Dimension('y', label=f'{basisu}{comp[1]}')
+        bsu = bs.upper()
+        x = hv.Dimension('x', label=f'{bsu}{comp[0]}')
+        y = hv.Dimension('y', label=f'{bsu}{comp[1]}')
         xmin, xmax = minmax(emb[:, 0])
         ymin, ymax = minmax(emb[:, 1])
 
@@ -755,8 +755,8 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
                                    xlim=(xmin, xmax),
                                    ylim=(ymin, ymax),
                                    size=size,
-                                   xlabel=f'{basisu}{comp[0]}',
-                                   ylabel=f'{basisu}{comp[1]}')
+                                   xlabel=f'{bsu}{comp[0]}',
+                                   ylabel=f'{bsu}{comp[1]}')
 
             if is_cat:
                 # we're manually creating legend (for datashade)
@@ -804,8 +804,8 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
                                 clim=minmax(pseudotime, perc=perc),
                                 xlim=(xmin, xmax),
                                 ylim=(ymin, ymax),
-                                xlabel=f'{basisu}{comp[0]}',
-                                ylabel=f'{basisu}{comp[1]}')# if not ret_hl else root_cell_scatter
+                                xlabel=f'{bsu}{comp[0]}',
+                                ylabel=f'{bsu}{comp[1]}')# if not ret_hl else root_cell_scatter
 
         if typp == 'expr':
             expr = ad_mraw.obs_vector(gene)
@@ -845,12 +845,12 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
     if root_cell_size is None:
         root_cell_size = size * 2
 
-    if bases is None:
-        bases = np.ravel(sorted(filter(len, map(BASIS_PAT.findall, adata.obsm.keys()))))
-    elif isinstance(bases, str):
-        bases = np.array([bases])
-    elif not isinstance(bases, np.ndarray):
-        bases = np.array(bases)
+    if basis is None:
+        basis = np.ravel(sorted(filter(len, map(BS_PAT.findall, adata.obsm.keys()))))
+    elif isinstance(basis, str):
+        basis = np.array([basis])
+    elif not isinstance(basis, np.ndarray):
+        basis = np.array(basis)
 
     if perc is None:
         perc = [None, None]
@@ -887,24 +887,24 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
     if not isinstance(components, np.ndarray):
         components = np.array(components)
     if components.ndim == 1:
-        components = np.repeat(components[np.newaxis, :], len(bases), axis=0)
+        components = np.repeat(components[np.newaxis, :], len(basis), axis=0)
 
     assert components.ndim == 2, f'Only `2` dimensional components are supported, got `{components.ndim}`.'
     assert components.shape[-1] == 2, f'Components\' second dimension must be of size `2`, got `{components.shape[-1]}`.'
 
-    if not isinstance(bases, np.ndarray):
-        bases = np.array(bases)
+    if not isinstance(basis, np.ndarray):
+        basis = np.array(basis)
 
-    assert components.shape[0] == len(bases), f'Expected #components == `{len(bases)}`, got `{components.shape[0]}`.'
+    assert components.shape[0] == len(basis), f'Expected #components == `{len(basis)}`, got `{components.shape[0]}`.'
     assert np.all(components >= 0), f'Currently, only positive indices are supported, found `{list(map(list, components))}`.'
 
-    diffmap_ix = np.where(bases != 'diffmap')[0]
+    diffmap_ix = np.where(basis != 'diffmap')[0]
     components[diffmap_ix, :] -= 1
 
-    for basis, comp in zip(bases, components):
-        shape = adata.obsm[f'X_{basis}'].shape
-        assert f'X_{basis}' in adata.obsm.keys(), f'`X_{basis}` not found in `adata.obsm`'
-        assert shape[-1] > np.max(comp), f'Requested invalid components `{list(comp)}` for basis `X_{basis}` with shape `{shape}`.'
+    for bs, comp in zip(basis, components):
+        shape = adata.obsm[f'X_{bs}'].shape
+        assert f'X_{bs}' in adata.obsm.keys(), f'`X_{bs}` not found in `adata.obsm`'
+        assert shape[-1] > np.max(comp), f'Requested invalid components `{list(comp)}` for bs `X_{bs}` with shape `{shape}`.'
 
     if adata.n_obs > SUBSAMPLE_THRESH and subsample in NO_SUBSAMPLE:
         warnings.warn(f'Number of cells `{adata.n_obs}` > `{SUBSAMPLE_THRESH}`. Consider specifying `subsample={SUBSAMPLING_STRATEGIES}`.')
@@ -915,10 +915,10 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
     if cont_cmap is None:
         cont_cmap = Viridis256
 
-    kdims = [hv.Dimension('Root cell', values=(adata if root_cell_all else alazy[bases[0], tuple(components[0])][0]).obs_names),
+    kdims = [hv.Dimension('Root cell', values=(adata if root_cell_all else alazy[basis[0], tuple(components[0])][0]).obs_names),
              hv.Dimension('Gene', values=genes),
-             hv.Dimension('Basis', values=bases)]
-    cs = lambda cell, gene, basis, *args, **kwargs: create_scatterplot(cell, gene, basis, perc[0], perc[1], *args, **kwargs)
+             hv.Dimension('bs', values=basis)]
+    cs = lambda cell, gene, bs, *args, **kwargs: create_scatterplot(cell, gene, bs, perc[0], perc[1], *args, **kwargs)
 
     data, is_cat = get_data(adata, key)
     if is_cat:
@@ -977,7 +977,7 @@ def dpt(adata, key, genes=None, bases=None, components=[1, 2],
 
 
 @wrap_as_col
-def graph(adata, key, bases=None, components=[1, 2], obs_keys=[], color_key=None, color_key_reduction=np.sum,
+def graph(adata, key, basis=None, components=[1, 2], obs_keys=[], color_key=None, color_key_reduction=np.sum,
           ixs=None, top_n_edges=None, filter_edges=None, directed=True, bundle=False, bundle_kwargs={},
           subsample=None, layouts=None, layout_kwargs={}, force_paga_indices=False,
           degree_by=None, legend_loc='top_right', node_size=12, edge_width=2, arrowhead_length=None,
@@ -995,11 +995,11 @@ def graph(adata, key, bases=None, components=[1, 2], obs_keys=[], color_key=None
         use `'paga'` to access PAGA connectivies graph or (prefix `'p:...'`)
         to access `adata.uns['paga'][...]`
         for `adata.uns['neighbors'][...]`, use prefix `'n:...'`
-    bases: Union[Str, List[Str]], optional (default: `None`)
-        bases in `adata.obsm`, if `None`, get all of them
+    basis: Union[Str, List[Str]], optional (default: `None`)
+        basis in `adata.obsm`, if `None`, get all of them
     components: Union[List[Int], List[List[Int]]], optional (default: `[1, 2]`)
-        components of specified `bases`
-        if it's of type `List[Int]`, all the bases have use the same components
+        components of specified `basis`
+        if it's of type `List[Int]`, all the basis have use the same components
     color_key: Str, optional (default: `None`)
         variable in `adata.obs` with which to color in each node
         or `'incoming'`, `'outgoing'` for coloring values based on weights
@@ -1158,9 +1158,9 @@ def graph(adata, key, bases=None, components=[1, 2], obs_keys=[], color_key=None
         return g
 
     def embed_graph(layout_key, graph):
-        basis_key = f'X_{layout_key}'
-        if basis_key in adata.obsm.keys():
-            emb = adata_ss.obsm[basis_key][:, get_component[layout_key]]
+        bs_key = f'X_{layout_key}'
+        if bs_key in adata.obsm.keys():
+            emb = adata_ss.obsm[bs_key][:, get_component[layout_key]]
             emb = normalize(emb)
             layout = dict(zip(graph.nodes.keys(), emb))
             l_kwargs = {}
@@ -1188,10 +1188,10 @@ def graph(adata, key, bases=None, components=[1, 2], obs_keys=[], color_key=None
 
     def get_nodes(layout_key):  # DRY DRY DRY
         nodes = bundled[layout_key].nodes
-        basis_key = f'X_{layout_key}'
+        bs_key = f'X_{layout_key}'
 
-        if basis_key in adata.obsm.keys():
-            emb = adata_ss.obsm[basis_key][:, get_component[layout_key]]
+        if bs_key in adata.obsm.keys():
+            emb = adata_ss.obsm[bs_key][:, get_component[layout_key]]
             emb = normalize(emb)
             xlim = minmax(emb[:, 0])
             ylim = minmax(emb[:, 1])
@@ -1280,36 +1280,36 @@ def graph(adata, key, bases=None, components=[1, 2], obs_keys=[], color_key=None
         warnings.warn('`kamada_kawai` layout required non-negative edges, removing it from the list of possible layouts.')
         layouts.remove('kamada_kawai')
 
-    if bases is None:
-        bases = np.ravel(sorted(filter(len, map(BASIS_PAT.findall, adata.obsm.keys()))))
-    elif not isinstance(bases, np.ndarray):
-        bases = np.array(bases)
+    if basis is None:
+        basis = np.ravel(sorted(filter(len, map(BS_PAT.findall, adata.obsm.keys()))))
+    elif not isinstance(basis, np.ndarray):
+        basis = np.array(basis)
 
     if not isinstance(components, np.ndarray):
         components = np.array(components)
     if components.ndim == 1:
-        components = np.repeat(components[np.newaxis, :], len(bases), axis=0)
-    if len(bases):
-        components[np.where(bases != 'diffmap')] -= 1
+        components = np.repeat(components[np.newaxis, :], len(basis), axis=0)
+    if len(basis):
+        components[np.where(basis != 'diffmap')] -= 1
 
     if is_paga:
         g_name = adata.uns['paga']['groups']
         if color_key is None or color_key != g_name:
             warnings.warn(f'Color key `{color_key}` differs from PAGA\'s groups `{g_name}`, setting it to `{g_name}`.')
             color_key = g_name
-        if len(bases):
-            warnings.warn(f'Cannot plot PAGA in the bases `{bases}`, removing them from layouts.')
-            bases, components = [], []
+        if len(basis):
+            warnings.warn(f'Cannot plot PAGA in the basis `{basis}`, removing them from layouts.')
+            basis, components = [], []
 
-    for basis, comp in zip(bases, components):
-        shape = adata.obsm[f'X_{basis}'].shape
-        assert f'X_{basis}' in adata.obsm.keys(), f'`X_{basis}` not found in `adata.obsm`'
-        assert shape[-1] > np.max(comp), f'Requested invalid components `{list(comp)}` for basis `X_{basis}` with shape `{shape}`.'
+    for bs, comp in zip(basis, components):
+        shape = adata.obsm[f'X_{bs}'].shape
+        assert f'X_{bs}' in adata.obsm.keys(), f'`X_{bs}` not found in `adata.obsm`'
+        assert shape[-1] > np.max(comp), f'Requested invalid components `{list(comp)}` for bs `X_{bs}` with shape `{shape}`.'
 
     if paga_pos is not None:
-        bases = ['paga']
+        basis = ['paga']
         components = [0, 1]
-    get_component = dict(zip(bases, components))
+    get_component = dict(zip(basis, components))
 
     is_categorical = False
     if color_key is not None:
@@ -1333,7 +1333,7 @@ def graph(adata, key, bases=None, components=[1, 2], obs_keys=[], color_key=None
     if not is_categorical:
         legend_loc = None
 
-    layouts = np.append(bases, layouts)
+    layouts = np.append(basis, layouts)
     if len(layouts) == 0:
         warnings.warn('Nothing to plot, no layouts found.')
         return
@@ -1346,9 +1346,9 @@ def graph(adata, key, bases=None, components=[1, 2], obs_keys=[], color_key=None
 
     if subsample != 'datashade':
         for layout_key in layouts:
-            basis_key = f'X_{layout_key}'
-            if basis_key in adata.obsm.keys():
-                emb = adata_ss.obsm[basis_key][:, get_component[layout_key]]
+            bs_key = f'X_{layout_key}'
+            if bs_key in adata.obsm.keys():
+                emb = adata_ss.obsm[bs_key][:, get_component[layout_key]]
                 emb = normalize(emb)
                 xlim = minmax(emb[:, 0])
                 ylim = minmax(emb[:, 1])
