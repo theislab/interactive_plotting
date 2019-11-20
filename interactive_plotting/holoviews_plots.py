@@ -263,7 +263,7 @@ def scatter(adata, genes=None, basis=None, components=[1, 2], obs_keys=None,
     for bs, comp in zip(basis, components):
         shape = adata.obsm[f'X_{bs}'].shape
         assert f'X_{bs}' in adata.obsm.keys(), f'`X_{bs}` not found in `adata.obsm`'
-        assert shape[-1] > np.max(comp), f'Requested invalid components `{list(comp)}` for bs `X_{bs}` with shape `{shape}`.'
+        assert shape[-1] > np.max(comp), f'Requested invalid components `{list(comp)}` for basis `X_{bs}` with shape `{shape}`.'
 
     if adata.n_obs > SUBSAMPLE_THRESH and subsample in NO_SUBSAMPLE:
         warnings.warn(f'Number of cells `{adata.n_obs}` > `{SUBSAMPLE_THRESH}`. Consider specifying `subsample={SUBSAMPLING_STRATEGIES}`.')
@@ -531,7 +531,7 @@ def scatterc(adata, basis=None, components=[1, 2], obs_keys=None,
     for bs, comp in zip(basis, components):
         shape = adata.obsm[f'X_{bs}'].shape
         assert f'X_{bs}' in adata.obsm.keys(), f'`X_{bs}` not found in `adata.obsm`'
-        assert shape[-1] > np.max(comp), f'Requested invalid components `{list(comp)}` for bs `X_{bs}` with shape `{shape}`.'
+        assert shape[-1] > np.max(comp), f'Requested invalid components `{list(comp)}` for basis `X_{bs}` with shape `{shape}`.'
 
     if adata.n_obs > SUBSAMPLE_THRESH and subsample in NO_SUBSAMPLE:
         warnings.warn(f'Number of cells `{adata.n_obs}` > `{SUBSAMPLE_THRESH}`. Consider specifying `subsample={SUBSAMPLING_STRATEGIES}`.')
@@ -690,7 +690,7 @@ def dpt(adata, key, genes=None, basis=None, components=[1, 2],
     root_cell_all: Bool, optional (default: `False`)
         show all root cells, even though they might not be in the embedding
         (e.g. when subsample='uniform' or 'density')
-        otherwise only show in the embedding (based on the data of 1st bs in `basis`)
+        otherwise only show in the embedding (based on the data of the 1st `basis`)
     root_cell_hl: Bool, optional (default: `True`)
         highlight the root cell
     root_cell_bbox: Bool, optional (default: `True`)
@@ -904,7 +904,7 @@ def dpt(adata, key, genes=None, basis=None, components=[1, 2],
     for bs, comp in zip(basis, components):
         shape = adata.obsm[f'X_{bs}'].shape
         assert f'X_{bs}' in adata.obsm.keys(), f'`X_{bs}` not found in `adata.obsm`'
-        assert shape[-1] > np.max(comp), f'Requested invalid components `{list(comp)}` for bs `X_{bs}` with shape `{shape}`.'
+        assert shape[-1] > np.max(comp), f'Requested invalid components `{list(comp)}` for basis `X_{bs}` with shape `{shape}`.'
 
     if adata.n_obs > SUBSAMPLE_THRESH and subsample in NO_SUBSAMPLE:
         warnings.warn(f'Number of cells `{adata.n_obs}` > `{SUBSAMPLE_THRESH}`. Consider specifying `subsample={SUBSAMPLING_STRATEGIES}`.')
@@ -1304,7 +1304,7 @@ def graph(adata, key, basis=None, components=[1, 2], obs_keys=[], color_key=None
     for bs, comp in zip(basis, components):
         shape = adata.obsm[f'X_{bs}'].shape
         assert f'X_{bs}' in adata.obsm.keys(), f'`X_{bs}` not found in `adata.obsm`'
-        assert shape[-1] > np.max(comp), f'Requested invalid components `{list(comp)}` for bs `X_{bs}` with shape `{shape}`.'
+        assert shape[-1] > np.max(comp), f'Requested invalid components `{list(comp)}` for basis `X_{bs}` with shape `{shape}`.'
 
     if paga_pos is not None:
         basis = ['paga']

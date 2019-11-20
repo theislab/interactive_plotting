@@ -533,7 +533,7 @@ def thresholding_hist(adata, key, categories, basis=['umap'], components=[1, 2],
     basis: list, optional (default: `['umap']`)
         basis in `adata.obsm_keys()` to visualize
     components: list(int); list(list(int)), optional (default: `[1, 2]`)
-        components to use for each bs
+        components to use for each basis
     bins: int; str, optional (default: `auto`)
         number of bins used for initial binning or a string key used in from numpy.histogram
     palette: list(str), optional (default: `None`)
@@ -834,7 +834,7 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
     show(column(*figs))
 
 
-def highlight_de(adata, bs='umap', components=[1, 2], n_top_genes=10,
+def highlight_de(adata, basis='umap', components=[1, 2], n_top_genes=10,
                  de_keys='names, scores, pvals_adj, logfoldchanges',
                  cell_keys='', n_neighbors=5, fill_alpha=0.1, show_hull=True,
                  legend_loc='top_right', plot_width=None, plot_height=None):
@@ -845,10 +845,10 @@ def highlight_de(adata, bs='umap', components=[1, 2], n_top_genes=10,
     --------
     adata: AnnData
         annotated data object
-    bs: str, optional (default: `'umap'`)
-        bs used in visualization
+    basis: str, optional (default: `'umap'`)
+        basis used in visualization
     components: list(int), optional (default: `[1, 2]`)
-        components of the bs
+        components of the basis
     n_top_genes: int, optional (default: `10`)
         number of differentially expressed genes to display
     de_keys: list(str); str, optional (default: `'names, scores, pvals_ads, logfoldchanges'`)
@@ -893,8 +893,8 @@ def highlight_de(adata, bs='umap', components=[1, 2], n_top_genes=10,
         else:
             cell_keys = []
 
-    if f'X_{bs}' not in adata.obsm.keys():
-        raise ValueError(f'Key `X_{bs}` not found in adata.obsm.')
+    if f'X_{basis}' not in adata.obsm.keys():
+        raise ValueError(f'Key `X_{basis}` not found in adata.obsm.')
 
     if not isinstance(components, np.ndarray):
         components = np.asarray(components)
@@ -903,7 +903,7 @@ def highlight_de(adata, bs='umap', components=[1, 2], n_top_genes=10,
     if key not in cell_keys:
         cell_keys.insert(0, key)
 
-    df = pd.DataFrame(adata.obsm[f'X_{bs}'][:, components - (bs != 'diffmap')], columns=['x', 'y'])
+    df = pd.DataFrame(adata.obsm[f'X_{basis}'][:, components - (basis != 'diffmap')], columns=['x', 'y'])
     for k in cell_keys:
         df[k] = list(map(str, adata.obs[k]))
 
@@ -981,8 +981,8 @@ def highlight_de(adata, bs='umap', components=[1, 2], n_top_genes=10,
         fig.add_layout(legend)
         fig.legend.click_policy = 'hide'  # hide does disable hovering, whereas 'mute' does not
 
-    fig.xaxis.axis_label = f'{bs}_{components[0]}'
-    fig.yaxis.axis_label = f'{bs}_{components[1]}'
+    fig.xaxis.axis_label = f'{basis}_{components[0]}'
+    fig.yaxis.axis_label = f'{basis}_{components[1]}'
 
     show(fig)
 
@@ -1008,7 +1008,7 @@ def link_plot(adata, key, genes=None, basis=['umap', 'pca'], components=[1, 2],
         list of basis to use when plotting;
         only the first plot is hoverable
     components: list(int); list(list(int)), optional (default: `[1, 2]`)
-        list of components for each bs
+        list of components for each basis
     subsample: str, optional (default: `None`)
         subsample strategy to use when there are too many cells
         possible values are: `"density"`, `"uniform"`, `None`
