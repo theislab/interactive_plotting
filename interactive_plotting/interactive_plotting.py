@@ -517,7 +517,7 @@ def interactive_hist(adata, keys=['n_counts', 'n_genes'],
         show(layout(children=cols, sizing_mode='fixed', ncols=2))
 
 
-def thresholding_hist(adata, key, categories, bases=['umap'], components=[1, 2],
+def thresholding_hist(adata, key, categories, basis=['umap'], components=[1, 2],
                       bins='auto', palette=None, legend_loc='top_right',
                       plot_width=None, plot_height=None):
     """Histogram with the option to highlight categories based on thresholding binned values.
@@ -530,8 +530,8 @@ def thresholding_hist(adata, key, categories, bases=['umap'], components=[1, 2],
         key in `adata.obs_keys()` where the data is stored
     categories: dict
         dictionary with keys corresponding to group names and values to starting boundaries `[min, max]`
-    bases: list, optional (default: `['umap']`)
-        bases in `adata.obsm_keys()` to visualize
+    basis: list, optional (default: `['umap']`)
+        basis in `adata.obsm_keys()` to visualize
     components: list(int); list(list(int)), optional (default: `[1, 2]`)
         components to use for each basis
     bins: int; str, optional (default: `auto`)
@@ -553,15 +553,15 @@ def thresholding_hist(adata, key, categories, bases=['umap'], components=[1, 2],
     if not isinstance(components[0], list):
         components = [components]
 
-    if len(components) != len(bases):
-        assert len(bases) % len(components) == 0 and len(bases) >= len(components)
-        components = components * (len(bases) // len(components))
+    if len(components) != len(basis):
+        assert len(basis) % len(components) == 0 and len(basis) >= len(components)
+        components = components * (len(basis) // len(components))
 
     if not isinstance(components, np.ndarray):
         components = np.asarray(components)
 
-    if not isinstance(bases, list):
-        bases = [bases]
+    if not isinstance(basis, list):
+        basis = [basis]
 
     palette = Set1[9] + Set2[8] + Set3[12] if palette is None else palette
 
@@ -575,8 +575,8 @@ def thresholding_hist(adata, key, categories, bases=['umap'], components=[1, 2],
     source = ColumnDataSource(data=dict(hist=hist, l_edges=edges[:-1], r_edges=edges[1:],
                               category=['default'] * len(hist), indices=[[]] * len(hist)))
 
-    df = pd.concat([pd.DataFrame(adata.obsm[f'X_{basis}'][:, comp - (basis != 'diffmap')], columns=[f'x_{basis}', f'y_{basis}'])
-                    for basis, comp in zip(bases, components)], axis=1)
+    df = pd.concat([pd.DataFrame(adata.obsm[f'X_{bs}'][:, comp - (bs != 'diffmap')], columns=[f'x_{bs}', f'y_{bs}'])
+                    for bs, comp in zip(basis, components)], axis=1)
     df['values'] = list(adata.obs[key])
     df['category'] = 'default'
     df['visible_category'] = 'default'
@@ -591,14 +591,14 @@ def thresholding_hist(adata, key, categories, bases=['umap'], components=[1, 2],
         hist_fig.legend.location = legend_loc
 
     emb_figs = []
-    for basis, comp in zip(bases, components):
-        fig = figure(title=basis)
+    for bs, comp in zip(basis, components):
+        fig = figure(title=bs)
 
-        fig.xaxis.axis_label = f'{basis}_{comp[0]}'
-        fig.yaxis.axis_label = f'{basis}_{comp[1]}'
+        fig.xaxis.axis_label = f'{bs}_{comp[0]}'
+        fig.yaxis.axis_label = f'{bs}_{comp[1]}'
         _set_plot_wh(fig, plot_width, plot_height)
 
-        fig.scatter(f'x_{basis}', f'y_{basis}', source=orig, size=10, color=color, legend='category')
+        fig.scatter(f'x_{bs}', f'y_{bs}', source=orig, size=10, color=color, legend='category')
         if legend_loc is not None:
             fig.legend.location = legend_loc
 
@@ -987,7 +987,7 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_genes=10,
     show(fig)
 
 
-def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
+def link_plot(adata, key, genes=None, basis=['umap', 'pca'], components=[1, 2],
              subsample=None, steps=[40, 40], sample_size=500,
              distance=2, cutoff=True, highlight_only=None, palette=None,
              show_legend=False, legend_loc='top_right', plot_width=None, plot_height=None):
@@ -1004,8 +1004,8 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
         list of genes in `adata.var_names`,
         which are used to compute the distance;
         if None, take all the genes
-    bases: list(str), optional (default:`['umap', 'pca']`)
-        list of bases to use when plotting;
+    basis: list(str), optional (default:`['umap', 'pca']`)
+        list of basis to use when plotting;
         only the first plot is hoverable
     components: list(int); list(list(int)), optional (default: `[1, 2]`)
         list of components for each basis
@@ -1047,9 +1047,9 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
     assert key in adata.obs.keys(), f'`{key}` not found in `adata.obs`.'
 
     if subsample == 'uniform':
-        adata, _ = sample_unif(adata, steps, bases[0])
+        adata, _ = sample_unif(adata, steps, basis[0])
     elif subsample == 'density':
-        adata, _ = sample_density(adata, sample_size, bases[0], seed=seed)
+        adata, _ = sample_density(adata, sample_size, basis[0], seed=seed)
     elif subsample is not None:
         raise ValueError(f'Unknown subsample strategy: `{subsample}`.')
 
@@ -1060,9 +1060,9 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
     if not isinstance(components[0], list):
         components = [components]
 
-    if len(components) != len(bases):
-        assert len(bases) % len(components) == 0 and len(bases) >= len(components)
-        components = components * (len(bases) // len(components))
+    if len(components) != len(basis):
+        assert len(basis) % len(components) == 0 and len(basis) >= len(components)
+        components = components * (len(basis) // len(components))
 
     if not isinstance(components, np.ndarray):
         components = np.asarray(components)
@@ -1091,8 +1091,8 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
             dmat.append(list(ad_tmp.obs['dpt_pseudotime'].replace([np.nan, np.inf], [0, 1])))
 
     dmat = pd.DataFrame(dmat, columns=list(map(str, range(adata.n_obs))))
-    df = pd.concat([pd.DataFrame(adata.obsm[f'X_{basis}'][:, comp - (basis != 'diffmap')], columns=[f'x{i}', f'y{i}'])
-                    for i, (basis, comp) in enumerate(zip(bases, components))] + [dmat], axis=1)
+    df = pd.concat([pd.DataFrame(adata.obsm[f'X_{bs}'][:, comp - (bs != 'diffmap')], columns=[f'x{i}', f'y{i}'])
+                    for i, (bs, comp) in enumerate(zip(basis, components))] + [dmat], axis=1)
     df['hl_color'] = np.nan
     df['index'] = range(len(df))
     df['hl_key'] = list(adata.obs[highlight_only]) if highlight_only is not None else 0
@@ -1106,10 +1106,10 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
 
     static_figs = []
     figs, renderers = [], []
-    for i, basis in enumerate(bases):
+    for i, bs in enumerate(basis):
         # linked plots
         fig = figure(tools='pan, reset, save, ' + ('zoom_in, zoom_out' if i == 0 else 'wheel_zoom'),
-                     title=basis, plot_width=400, plot_height=400)
+                     title=bs, plot_width=400, plot_height=400)
         _set_plot_wh(fig, plot_width, plot_height)
         scatter = fig.scatter(f'x{i}', f'y{i}', source=ds, line_color=mapper, color=mapper,
                               legend=('hl_key' if highlight_only is not None else key) if (show_legend and legend_loc is not None) else None,
@@ -1121,7 +1121,7 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
         renderers.append(scatter)
     
         # static plots
-        fig = figure(title=basis, plot_width=400, plot_height=400)
+        fig = figure(title=bs, plot_width=400, plot_height=400)
         fig.scatter(f'x{i}', f'y{i}', source=ds, size=8, legend=key if legend_loc is not None else None,
                     color={'field': key, 'transform': static_fig_mapper})
 
@@ -1173,7 +1173,7 @@ def link_plot(adata, key, genes=None, bases=['umap', 'pca'], components=[1, 2],
     show(column(slider, row(*static_figs), row(*figs)))
 
 
-def highlight_indices(adata, key, basis='diffmap', components=[1, 2],
+def highlight_indices(adata, key, bs='diffmap', components=[1, 2],
                       cell_keys='', genes=[], use_raw=True, legend_loc='top_right',
                       plot_width=None, plot_height=None, tools='pan, reset, wheel_zoom, save'):
     """
@@ -1185,10 +1185,10 @@ def highlight_indices(adata, key, basis='diffmap', components=[1, 2],
         annotated data object
     key: str
         key in `adata.obs_keys()` to color
-    basis: str, optional (default: `'diffmap'`)
-        basis to use
+    bs: str, optional (default: `'diffmap'`)
+        bs to use
     components: list[int], optional (default: `[1, 2]`)
-        which components of the basis to use
+        which components of the bs to use
     cell_keys: str, list(str), optional (default: `''`)
         keys to display from `adata.obs_keys()` when hovering over cell
     genes: list, optional (default: `[]`)
@@ -1213,8 +1213,8 @@ def highlight_indices(adata, key, basis='diffmap', components=[1, 2],
     if key not in adata.obs:
         raise ValueError(f'{key} not found in `adata.obs`')
 
-    if f'X_{basis}' not in adata.obsm_keys():
-        raise ValueError(f'basis `X_{basis}` not found in `adata.obsm`')
+    if f'X_{bs}' not in adata.obsm_keys():
+        raise ValueError(f'bs `X_{bs}` not found in `adata.obsm`')
 
     if not isinstance(components, type(np.array)):
         components = np.array(components)
@@ -1226,7 +1226,7 @@ def highlight_indices(adata, key, basis='diffmap', components=[1, 2],
         else:
             cell_keys = []
 
-    df = pd.DataFrame(adata.obsm[f'X_{basis}'][:, components - (basis != 'diffmap')], columns=['x', 'y'])
+    df = pd.DataFrame(adata.obsm[f'X_{bs}'][:, components - (bs != 'diffmap')], columns=['x', 'y'])
 
     for k in cell_keys:
         df[k] = list(map(str, adata.obs[k]))
@@ -1272,8 +1272,8 @@ def highlight_indices(adata, key, basis='diffmap', components=[1, 2],
 
     hover_cell = HoverTool(renderers=renderers, tooltips=[(f'{k}', f'@{k}') for k in cell_keys])
 
-    p.xaxis.axis_label = f'{basis}_{components[0]}'
-    p.yaxis.axis_label = f'{basis}_{components[1]}'
+    p.xaxis.axis_label = f'{bs}_{components[0]}'
+    p.yaxis.axis_label = f'{bs}_{components[1]}'
 
     source = ColumnDataSource(df)
     labels = LabelSet(x='x', y='y', text='index',

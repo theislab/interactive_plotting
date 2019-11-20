@@ -25,7 +25,7 @@ HOLOMAP_THRESH = 50
 OBSM_SEP = ':'
 
 CBW = 10  # colorbar width
-BASIS_PAT = re.compile('^X_(.+)')
+BS_PAT = re.compile('^X_(.+)')
 
 # for graph
 DEFAULT_LAYOUTS = {l.split('_layout')[0]:getattr(nx.layout, l)
@@ -52,13 +52,13 @@ class SamplingLazyDict(dict):
 
     def __getitem__(self, key):
         if key not in self:
-            basis, comps = key
+            bs, comps = key
             rev_comps = comps[::-1]
 
-            if (basis, rev_comps) in self.keys():
-                res, ixs = self[basis, rev_comps]
+            if (bs, rev_comps) in self.keys():
+                res, ixs = self[bs, rev_comps]
             else:
-                res, ixs = self.callback(self.adata, basis=basis, components=comps, **self.callback_kwargs)
+                res, ixs = self.callback(self.adata, bs=bs, components=comps, **self.callback_kwargs)
 
             self[key] = res, ixs
 
@@ -480,14 +480,14 @@ def get_all_obsm_keys(adata, ixs):
 
 # based on:
 # https://github.com/velocyto-team/velocyto-notebooks/blob/master/python/DentateGyrus.ipynb
-def sample_unif(adata, steps, basis='umap', components=[0, 1]):
+def sample_unif(adata, steps, bs='umap', components=[0, 1]):
     if not isinstance(steps, (tuple, list)):
         steps = (steps, steps)
 
     assert len(components)
     assert min(components) >= 0
 
-    embedding = adata.obsm[f'X_{basis}'][:, components]
+    embedding = adata.obsm[f'X_{bs}'][:, components]
 
     grs = []
     for i in range(embedding.shape[1]):
@@ -513,7 +513,7 @@ def sample_unif(adata, steps, basis='umap', components=[0, 1]):
     return adata[ixs].copy(), ixs
 
 
-def sample_density(adata, size, basis='umap', seed=None, components=[0, 1]):
+def sample_density(adata, size, bs='umap', seed=None, components=[0, 1]):
     if size >= adata.n_obs:
         return adata
 
@@ -522,10 +522,10 @@ def sample_density(adata, size, basis='umap', seed=None, components=[0, 1]):
     else:
         # should be unique, using it only once since we cache the results
         # we don't need to add the components
-        key_added =  f'{basis}_density_ipl_tmp'
+        key_added =  f'{bs}_density_ipl_tmp'
         remove_key = False  # we may be operating on original object, keep it clean
         if key_added not in adata.obs.keys():
-            sc.tl.embedding_density(adata, basis, key_added=key_added)
+            sc.tl.embedding_density(adata, bs, key_added=key_added)
             remove_key = True
         tmp = pd.DataFrame(np.exp(adata.obs[key_added]) / np.sum(np.exp(adata.obs[key_added])))
         tmp.rename(columns={key_added: 'prob_density'}, inplace=True)
