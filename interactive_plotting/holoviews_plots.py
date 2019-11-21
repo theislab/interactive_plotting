@@ -274,7 +274,7 @@ def scatter(adata, genes=None, basis=None, components=[1, 2], obs_keys=None,
     if cmap is None:
         cmap = Viridis256
 
-    kdims = [hv.Dimension('bs', values=basis),
+    kdims = [hv.Dimension('Basis', values=basis),
              hv.Dimension('Condition', values=conditions),
              hv.Dimension('Percentile (lower)', range=(0, 100), step=0.1, type=float, default=0 if perc[0] is None else perc[0]),
              hv.Dimension('Percentile (upper)', range=(0, 100), step=0.1, type=float, default=100 if perc[1] is None else perc[1])]
@@ -551,7 +551,7 @@ def scatterc(adata, basis=None, components=[1, 2], obs_keys=None,
         lims['x'][bs] = minmax(emb[:, 0 + is_diffmap])
         lims['y'][bs] = minmax(emb[:, 1 + is_diffmap])
 
-    kdims = [hv.Dimension('bs', values=basis),
+    kdims = [hv.Dimension('Basis', values=basis),
              hv.Dimension('Condition', values=conditions)]
 
     cmaps = dict()
@@ -917,7 +917,7 @@ def dpt(adata, key, genes=None, basis=None, components=[1, 2],
 
     kdims = [hv.Dimension('Root cell', values=(adata if root_cell_all else alazy[basis[0], tuple(components[0])][0]).obs_names),
              hv.Dimension('Gene', values=genes),
-             hv.Dimension('bs', values=basis)]
+             hv.Dimension('Basis', values=basis)]
     cs = lambda cell, gene, bs, *args, **kwargs: create_scatterplot(cell, gene, bs, perc[0], perc[1], *args, **kwargs)
 
     data, is_cat = get_data(adata, key)
