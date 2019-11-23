@@ -415,13 +415,16 @@ def scatterc(adata, basis=None, components=[1, 2], obs_keys=None,
         is_diffmap = bs == 'diffmap'
 
         if len(args) > 0:
-            ixs = np.where(basis == bs)[0][0] * 2
-            comp = (np.array([args[ixs], args[ixs + 1]]) - (not is_diffmap)) % adata.obsm[f'X_{bs}'].shape[-1]
+            x, y = args
+            print(x, y)
+            comp = (np.array([x, y]) - (not is_diffmap)) % adata.obsm[f'X_{bs}'].shape[-1]
         else:
             comp = np.array(components[ixs])  # need to make a copy
 
+        ad, ixs_ss = alazy[bs, tuple(comp)]
+
         # subsample is uniform or density
-        ad, ixs = alazy[bs, tuple(comp)]
+
         # because diffmap has small range, it interferes with the legend
         emb = ad.obsm[f'X_{bs}'][:, comp] * (1000 if is_diffmap else 1)
         comp += not is_diffmap  # naming consistence
@@ -441,7 +444,7 @@ def scatterc(adata, basis=None, components=[1, 2], obs_keys=None,
             data = ad.obsm[cond][:, ix]
 
         data = pd.Categorical(data).as_ordered()
-        scatter = hv.Scatter({'x': emb[:, 0], 'y': emb[:, 1], 'cond': data, 'index': ixs},
+        scatter = hv.Scatter({'x': emb[:, 0], 'y': emb[:, 1], 'cond': data, 'index': ixs_ss},
                              kdims=[x, y], vdims=['cond', 'index']).sort('cond')
 
         return scatter.opts(color_index='cond', cmap=cmaps[cond],
@@ -569,13 +572,13 @@ def scatterc(adata, basis=None, components=[1, 2], obs_keys=None,
         # have to wrap because of the *args
         dynmaps = [hv.HoloMap({(c, b):create_scatterplot(c, bs=b) for c in conditions for b in basis}, kdims=kdims[::-1])]
     else:
-        for bs, comp in zip(basis, components):
-            kdims.append(hv.Dimension(f'{bs.upper()}[X]',
-                                      type=int, default=1, step=1,
-                                      range=(1, adata.obsm[f'X_{bs}'].shape[-1])))
-            kdims.append(hv.Dimension(f'{bs.upper()}[Y]',
-                                      type=int, default=2, step=1,
-                                      range=(1, adata.obsm[f'X_{bs}'].shape[-1])))
+        kdims.append(hv.Dimension('Component[X]',
+                                  type=int, default=1, step=1,
+                                  range=(1, adata.obsm[f'X_{basis[0]}'].shape[-1])))
+        kdims.append(hv.Dimension('Component[Y]',
+                                  type=int, default=2, step=1,
+                                  range=(1, adata.obsm[f'X_{basis[0]}'].shape[-1])))
+        kx, ky = kdims[-2], kdims[-1]
 
         if cols is None:
             dynmaps = [hv.DynamicMap(_cs, kdims=kdims)]
@@ -611,10 +614,10 @@ def scatterc(adata, basis=None, components=[1, 2], obs_keys=None,
     else:
         if legend is not None:
             dynmaps = [(d * l).opts(legend_position=legend_loc)
-                       for d, l in zip(dynmaps, legend.layout('bs') if lazy_loading and show_legend else [legend] * len(dynmaps))]
+                       for d, l in zip(dynmaps, legend.layout('bs'))]
 
         dynmap = hv.Layout([d.opts(axiswise=True, framewise=True,
-                                   frame_height=plot_height, frame_width=plot_width) for d in dynmaps]).cols(cols)
+                                   frame_height=plot_height, frame_width=plot_width) for d in dynmaps])
 
     return dynmap.cols(cols).opts(title='', height=plot_height, width=plot_width) if cols is not None else dynmap
 
