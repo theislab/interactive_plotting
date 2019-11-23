@@ -105,9 +105,9 @@ def heatmap(adata, genes, group_key='louvain', show_scatterplot=False):
     group_order = dict(zip(groups, range(len(groups))))
     gene_order = dict(zip(genes, range(len(genes))))
 
-    ad = adata[np.in1d(adata.obs['louvain'], groups)][:, genes]
+    ad = adata[np.in1d(adata.obs[group_key], groups)][:, genes]
     df = pd.DataFrame(ad.X, columns=genes)
-    df['group'] = list(map(str, ad.obs['louvain']))
+    df['group'] = list(map(str, ad.obs[group_key]))
     val = df.groupby('group').max().values
 
     x = hv.Dimension('x', label='Gene')
@@ -134,7 +134,7 @@ def heatmap(adata, genes, group_key='louvain', show_scatterplot=False):
     df = df.melt(value_vars=genes, id_vars=(['pseudotime'] if 'pseudotime' in df else []) + ['group', 'color'],
             var_name='gene', value_name='expression')
     dataset = hv.Dataset(df, vdims=['expression', 'color'])
-    dmap = hv.DynamicMap(lambda x, y: scatter(adata, x, 'louvain', subsample=None),
+    dmap = hv.DynamicMap(lambda x, y: scatter(adata, x, group_key, subsample=None),
                          #hv.Scatter(dataset.select(gene=x),
                          #                       kdims='pseudotime',
                          #                       label='{} @ {}[{}]'.format(x, by, y)).opts(color='color', axiswise=True, framewise=True),
