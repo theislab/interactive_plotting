@@ -320,10 +320,10 @@ def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=
     return scatter.opts(tools=[hovertool]) if hovertool is not None else scatter
 
 
-def _heatmap(adata, genes, group='louvain', sort_genes=True, use_raw=False,
-            xrotation=90, yrotation=0, colorbar=True,
-            plot_width=600, plot_height=300, cmap=Viridis256,
-            hover=True, agg_fns=['mean']):
+def _heatmap(adata, genes, group, sort_genes=True, use_raw=False,
+            agg_fns=['mean'], hover=True,
+            xrotation=90, yrotation=0, colorbar=True, cmap=None,
+            plot_height=300, plot_width=600):
     '''
     Params
     -------
@@ -331,15 +331,34 @@ def _heatmap(adata, genes, group='louvain', sort_genes=True, use_raw=False,
         adata object
     genes: List[Str]
         genes in `adata.var_names`
-    group_key: Str
+    group: Str
         key in `adata.obs`, must be categorical
-    show_scatterplot: Bool, optional (default: `False`)
-        whether to show gene expression
-        in pseudotime for selected gene - TODO: make more general
+    sort_genes: Bool, optional (default: `True`)
+        whether to sort the genes
+    use_raw: Bool, optional (default: `True`)
+        whether to use `.raw` attribute
+    agg_fns: List[Str], optional (default: `['mean']`)
+        list of pandas' aggregation functions
+    hover: Bool, optional (deault: `True`)
+        whether to show hover information
+    xrotation: Int, optional (default: `90`)
+        rotation of labels on x-axis
+    yrotation: Int, optional (default: `0`)
+        rotation of labels on y-axis
+    colorbar: Bool, optional (default: `True`)
+        whether to show colorbar
+    cmap: Union[List[Str], NoneType], optional (default, `None`)
+        colormap of the heatmap,
+        if `None`, use `Viridis256`
+    plot_height: Int, optional (default: `600`)
+        height of the heatmap
+    plot_width: Int, optional (default: `200`)
+        width of the heatmap
 
     Returns
     -------
     '''
+
     assert group in adata.obs
     assert is_categorical(adata.obs[group])
     assert len(agg_fns) > 0
@@ -369,6 +388,7 @@ def _heatmap(adata, genes, group='louvain', sort_genes=True, use_raw=False,
                                                                    xrotation=xrotation, yrotation=yrotation)
 
     return heatmap.opts(frame_width=plot_width, frame_height=plot_height, colorbar=colorbar, cmap=cmap)
+
 
 def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'], use_raw=False,
             order_keys=[], hover=True, show_highlight=False, show_scatter=False,
@@ -515,3 +535,4 @@ def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'],
                            streams=[hv.streams.RangeXY(transient=True)], random_seed=seed)
 
     return (hm + highlight + scatter).cols(1)
+
