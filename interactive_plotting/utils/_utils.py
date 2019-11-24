@@ -569,5 +569,8 @@ def get_xy_data(x, adata, adata_mraw, indices, use_original_limits=False, inc=0)
     return x, xlabel, xlim
 
 
-def get_mraw(adata):
+def get_mraw(adata, use_raw):
+    if not use_raw:
+        return adata
+
     return adata.raw if hasattr(adata, 'raw') and adata.raw is not None else adata

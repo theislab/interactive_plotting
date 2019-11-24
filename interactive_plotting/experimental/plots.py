@@ -139,8 +139,8 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
     assert subsample in (None, 'none', 'datashade', 'decimate'), f'Invalid subsampling strategy `{subsample}`. ' \
             'Possible values are `None, \'none\', \'datashade\', \'decimate\'`.'
 
-    adata_mraw = get_mraw(adata)
-    if adata_mraw is adata:
+    adata_mraw = get_mraw(adata, use_raw)
+    if adata_mraw is adata and use_raw:
         warnings.warn('Failed fetching the `.raw`. attribute of `adata`.')
 
     if indices is None:
@@ -213,7 +213,7 @@ def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=
              cmap=None, show_legend=True, plot_height=400, plot_width=400):
     assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
     # assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
-    adata_mraw = get_mraw(adata)
+    adata_mraw = get_mraw(adata, use_raw)
 
     if subsample == 'uniform':
         cb_kwargs = {'steps': steps}
@@ -366,9 +366,15 @@ def _heatmap(adata, genes, group, sort_genes=True, use_raw=False,
     genes = sorted(genes) if sort_genes else genes
     groups = sorted(list(adata.obs[group].cat.categories))
 
-    ad = adata[np.in1d(adata.obs[group], groups)][:, genes]
-    df = pd.DataFrame(get_mraw(ad).X, columns=genes)
-    df['group'] = list(map(str, ad.obs[group]))
+    adata_mraw = get_mraw(adata, use_raw)
+    common_subset = list(set(adata.obs_names) & set(adata_mraw.obs_names))
+    adata, adata_mraw = adata[common_subset, :], adata_mraw[common_subset, :]
+
+    ixs = np.in1d(adata.obs[group], groups)
+    adata, adata_mraw = adata[ixs, :], adata_mraw[ixs, :]
+
+    df = pd.DataFrame(adata_mraw[:, genes].X, columns=genes)
+    df['group'] = list(map(str, adata.obs[group]))
     groupby = df.groupby('group')
 
     vals = {agg_fn: groupby.agg(agg_fn) for agg_fn in agg_fns}
