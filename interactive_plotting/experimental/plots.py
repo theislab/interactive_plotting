@@ -27,12 +27,6 @@ def pad(minn, maxx, padding=0.1):
 
     return minn - (delta * padding), maxx + (delta * padding)
 
-def pad(minn, maxx, padding=0.1):
-    if minn > maxx:
-        maxx, minn = minn, maxx
-    delta = maxx - minn
-
-    return minn - (delta * padding), maxx + (delta * padding)
 
 def minmax(component, perc=None, is_sorted=False):
     if perc is not None:
@@ -49,28 +43,74 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
              seed=None, use_original_limits=False,
              legend_loc='top_right', show_legend=True, plot_height=600, plot_width=600):
     '''
+    Params
+    -------
     adata: anndata.AnnData
-    x:
-    y:
-    color:
-    order_key:
-    indices:
-    subsample:
-    use_raw:
-    size:
-    jitter:
-    perc:
-    hover_keys:
-    hover_dims:
-    keep_frac:
-    steps:
-    seed:
-    use_original_limits:
-    legend_loc:
-    show_legend:
-    plot_height:
-    plot_width:
+        adata object
+    x: Union[Int, Str]
+        values on the x-axis
+        if of type `Int`, it corresponds to index in `adata.var_names`
+        if of type `Str`, it can be either:
+            - key in `adata.var_names`
+            - `'{basis_name}:{index}'` or `'{basis_name}'`, such as
+              `'pca:0'` or `'umap'` where `'{basis}'` is a basis from `adata.obsm` and
+              `'{index}'` is the number of the component to choose
+    y: Union[Int, Str]
+        values on the y-axis
+        if of type `Int`, it corresponds to index in `adata.var_names`
+        if of type `Str`, it can be either:
+            - key in `adata.var_names`
+            - `'{basis_name}:{index}'` or `'{basis_name}'`, such as
+              `'pca:0'` or `'umap'` where `'{basis}'` is a basis from `adata.obsm` and
+              `'{index}'` is the number of the component to choose
+    color: Union[Str, NoneType], optional (default: `None`)
+        key in `adata.obs` to color in,
+        if `None`, all cells will be black
+    order_key: Union[Str, NoneType], optional (default: `None`)
+        key in `adata.obs` which defines cell-ordering,
+        such as `'dpt_pseudotime'`, cells will
+        be sorted in ascending order
+    indices: Union[np.array[Int], np.array[Bool], NoneType], optional (default: `None`)
+        subset of cells to plot,
+        if `None`, plot all cells
+    subsample: Union[Str, NoneType]
+    use_raw: Bool, optional (default: `False`)
+        whether to use `.raw` attribute
+    size: Int, optional (default: `5`)
+        size of the glyps
+    jitter: Union[Tuple[Float, Float], NoneType], optional (default: `None`)
+        variance of normal distribution to use
+        as a jittering
+    perc: Union[List[Float, Float], NoneType], optional (default: `None`)
+        percentiles for color clipping
+    hover_keys: Union[List[Str], NoneType], optional (default: `[]`)
+        keys in `adata.obs` to display when hovering over cells,
+        if `None`, display nothing,
+        if `[]`, display cell index,
+        note that if `subsample='datashade'`, only cell index can be display
+    hover_dims: Tuple[Int, Int], optional (default: `(10, 10)`)
+        number of rows and columns of hovering tiles,
+        only used when `subsample='datashade'`
+    keep_frac: Float, optional (default: `0.2`)
+        fraction of cells to keep, used when `subsample='decimate'`
+    steps: Union[]
+    seed: Union[Float, NoneType], optional (default: `None`)
+        random seed, used when `subsample='decimate'`
+    use_original_limits: Bool, optional (default: `False`)
+        internal use only
+    legend_loc: Str, optional (default: `'top_right'`)
+        position of the legend
+    show_legend:, Bool, optional (default: `True`)
+        whether to show legend
+    plot_height: Int, optional (default: `600`)
+        height of the plot
+    plot_width: Int, optional (default: `600`)
+        width of the plot
 
+    Returns
+    -------
+    plot: hv.ScatterPlot
+        a scatterplot
     '''
 
     if hover_keys is not None:
@@ -142,8 +182,7 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
         for key in hover_keys:
             hover[key] = adata.obs[key][indices][ixs]
 
-    return _scatter(adata, x=x.copy(),
-                    y=y.copy(),
+    return _scatter(adata, x=x.copy(), y=y.copy(),
                     condition=condition,
                     by=color,
                     xlabel=xlabel,
@@ -162,63 +201,8 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
 
 def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=40, keep_frac=0.2,
              seed=None, legend_loc='top_right', size=4, xlabel=None, ylabel=None, title=None,
-             use_raw=True, hover=None,
-             hover_width=10,
-             hover_height=10,
-             jitter=None,
-             perc=None,
-             xlim=None,
-             ylim=None,
+             use_raw=True, hover=None, hover_width=10, hover_height=10, jitter=None, perc=None, xlim=None, ylim=None,
              cmap=None, show_legend=True, plot_height=400, plot_width=400):
-    '''
-    Scatter plot for categorical observations. TODO: update docs, maybe not pass adata
-
-    Params
-    --------
-    adata: anndata.Anndata
-        anndata object
-    subsample: Str, optional (default: `'datashade'`)
-        subsampling strategy for large data
-        possible values are `None, 'none', 'datashade', 'decimate', 'density', 'uniform'`
-        using `subsample='datashade'` is preferred over other options since it does not subset
-        when using `subsample='datashade'`, colorbar is not visible
-        `'density'` and `'uniform'` use first element of `bases` for their computation
-    steps: Union[Int, Tuple[Int, Int]], optional (default: `40`)
-        step size when the embedding directions
-        larger step size corresponds to higher density of points
-    keep_frac: Float, optional (default: `0.2`)
-        number of observations to keep when `subsample='decimate'`
-    lazy_loading: Bool, optional (default: `False`)
-        only visualize when necessary
-        for notebook sharing, consider using `lazy_loading=False`
-    sort: Bool, optional (default: `True`)
-        whether sort the `genes`, `obs_keys` and `obsm_keys`
-        in ascending order
-    skip: Bool, optional (default: `True`)
-        skip all the keys not found in the corresponding collections
-    seed: Int, optional (default: `None`)
-        random seed, used when `subsample='decimate'``
-    legend_loc: Str, optional (default: `top_right`)
-        position of the legend
-    cols: Int, optional (default: `None`)
-        number of columns when plotting bases
-        if `None`, use togglebar
-    size: Int, optional (default: `4`)
-        size of the glyphs
-        works only when `subsample!='datashade'`
-    cmap: List[Str], optional (default: `datashader.colors.Sets1to3`)
-        categorical colormap in hex format
-    plot_height: Int, optional (default: `400`)
-        height of the plot in pixels
-    plot_width: Int, optional (default: `400`)
-        width of the plot in pixels
-
-    Returns
-    --------
-    plot: panel.panel
-        holoviews plot wrapped in `panel.panel`
-    '''
-
     assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
     # assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
     adata_mraw = get_mraw(adata)
@@ -321,10 +305,12 @@ def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=
 
 
 def _heatmap(adata, genes, group, sort_genes=True, use_raw=False,
-            agg_fns=['mean'], hover=True,
-            xrotation=90, yrotation=0, colorbar=True, cmap=None,
-            plot_height=300, plot_width=600):
+             agg_fns=['mean'], hover=True,
+             xrotation=90, yrotation=0, colorbar=True, cmap=None,
+             plot_height=300, plot_width=600):
     '''
+    Internal heatmap function.
+
     Params
     -------
     adata: anndata.AnnData
@@ -357,6 +343,8 @@ def _heatmap(adata, genes, group, sort_genes=True, use_raw=False,
 
     Returns
     -------
+    plot: hv.HeatMap
+        a heatmap
     '''
 
     assert group in adata.obs
@@ -398,6 +386,8 @@ def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'],
     '''
     Plot a heatmap with groups selected from drop-down menu.
 
+    Params
+    -------
     adata: anndata.AnnData
         adata object
     genes: List[Str]
@@ -456,6 +446,10 @@ def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'],
     **scatter_kwargs:
         additional argument for `ipl.experimental.scatter`,
         only used when `show_scatter=True`
+
+    Returns
+    -------
+    holoviews plot
     '''
 
     def _highlight(group, index):
