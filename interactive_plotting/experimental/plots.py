@@ -43,14 +43,16 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
              keep_frac=0.2, steps=40, seed=None, use_original_limits=False,
              legend_loc='top_right', show_legend=True, plot_height=600, plot_width=600):
     '''
+    Plot a scatterplot.
+
     Params
     -------
     adata: anndata.AnnData
         adata object
     x: Union[Int, Str, None]
         values on the x-axis
+        if of type `NoneType`, x-axis will be based on `order_key`
         if of type `Int`, it corresponds to index in `adata.var_names`
-        if of type `NoneType`, x-axis will be the order based on `order_key`
         if of type `Str`, it can be either:
             - key in `adata.var_names`
             - `'{basis_name}:{index}'` or `'{basis_name}'`, such as
@@ -77,12 +79,12 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
     subsample: Str, optional (default: `'datashade'`)
         subsampling strategy for large data
         possible values are `None, 'none', 'datashade', 'decimate'`
-        using `subsample='datashade'` is preferred over other options since it does not subset
+        using `subsample='datashade'` is preferred over other option since it does not subset
         when using `subsample='datashade'`, colorbar is not visible
     use_raw: Bool, optional (default: `False`)
         whether to use `.raw` attribute
     size: Int, optional (default: `5`)
-        size of the glyps
+        size of the glyphs
     jitter: Union[Tuple[Float, Float], NoneType], optional (default: `None`)
         variance of normal distribution to use
         as a jittering
@@ -135,7 +137,7 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
 
     assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
     assert subsample in (None, 'none', 'datashade', 'decimate'), f'Invalid subsampling strategy `{subsample}`. ' \
-            'Possible values are `None, \'none\'\'datashade\', \'decimate\'`.'
+            'Possible values are `None, \'none\', \'datashade\', \'decimate\'`.'
 
     adata_mraw = get_mraw(adata)
     if adata_mraw is adata:
@@ -156,11 +158,13 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
         if order_key is not None:
             x, xlabel = adata.obs[order_key][indices][ixs], order_key
         else:
-            x, xlabel = ixs, 'index'  # jitter
+            x, xlabel = ixs, 'index'
     else:
         x, xlabel, xlim = get_xy_data(x, adata, adata_mraw, indices, use_original_limits)
+        x = x[ixs]
 
     y, ylabel, ylim = get_xy_data(y, adata, adata_mraw, indices, use_original_limits, inc=1)
+    y = y[ixs]
 
     # jitter
     if jitter is not None:
@@ -194,18 +198,11 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
             hover[key] = adata.obs[key][indices][ixs]
 
     return _scatter(adata, x=x.copy(), y=y.copy(),
-                    condition=condition,
-                    by=color,
-                    xlabel=xlabel,
-                    ylabel=ylabel,
-                    title=color,
-                    hover=hover,
-                    jitter=jitter,
-                    perc=perc,
-                    xlim=xlim,
-                    ylim=ylim,
-                    hover_width=hover_dims[1],
-                    hover_height=hover_dims[0],
+                    condition=condition, by=color,
+                    xlabel=xlabel,  ylabel=ylabel,
+                    title=color, hover=hover, jitter=jitter,
+                    perc=perc, xlim=xlim, ylim=ylim,
+                    hover_width=hover_dims[1],hover_height=hover_dims[0],
                     subsample=subsample, steps=steps, keep_frac=keep_frac, seed=seed, legend_loc=legend_loc,
                     size=size, cmap=cmap, show_legend=show_legend, plot_height=plot_height, plot_width=plot_width)
 
@@ -312,6 +309,7 @@ def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=
 
     scatter = scatter.opts(title=title if title is not None else '',
                            frame_height=plot_height, frame_width=plot_width, xlim=xlim, ylim=ylim)
+
     return scatter.opts(tools=[hovertool]) if hovertool is not None else scatter
 
 
@@ -392,11 +390,13 @@ def _heatmap(adata, genes, group, sort_genes=True, use_raw=False,
 @wrap_as_col
 def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'], use_raw=False,
             order_keys=[], hover=True, show_highlight=False, show_scatter=False,
-            subsample='decimate', keep_frac=0.2, seed=None,
+            subsample=None, keep_frac=0.2, seed=None,
             xrotation=90, yrotation=0, colorbar=True, cont_cmap=None,
             height=200, width=600, **scatter_kwargs):
     '''
     Plot a heatmap with groups selected from a drop-down menu.
+    If `show_highlight=True` and `show_scatterplot=True`, additional
+    interaction occurrs when clicking on the highlighted heatmap.
 
     Params
     -------
@@ -410,11 +410,11 @@ def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'],
     compare: Str, optional (default: `'genes'`)
         only used when `show_scatterplot=True`,
         creates a drop-down:
-        if `'genes'`, clicking a gene in highlighted heatmap
+        if `'genes'`:
             drow-down menu will contain values from `genes` and clicking
             a gene in highlighted heatmap will plot scatterplot of the 2
             genes with groups colored in
-        if `'basis'`
+        if `'basis'`:
             drow-down menu will contain available bases and clicking
             a gene in highlighted heatmap will plot the gene in the selected
             embedding with its expression colored in
