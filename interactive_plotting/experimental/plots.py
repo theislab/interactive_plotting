@@ -393,10 +393,10 @@ def _heatmap(adata, genes, group, sort_genes=True, use_raw=False,
 def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'], use_raw=False,
             order_keys=[], hover=True, show_highlight=False, show_scatter=False,
             subsample='decimate', keep_frac=0.2, seed=None,
-            xrotation=90, yrotation=0, colorbar=True, cont_cmap=Viridis256,
-            width=600, height=200, **scatter_kwargs):
+            xrotation=90, yrotation=0, colorbar=True, cont_cmap=None,
+            height=200, width=600, **scatter_kwargs):
     '''
-    Plot a heatmap with groups selected from drop-down menu.
+    Plot a heatmap with groups selected from a drop-down menu.
 
     Params
     -------
@@ -407,9 +407,9 @@ def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'],
     groups: List[Str], optional (default: `None`)
         categorical observation in `adata.obs`,
         if `None`, get all groups from `adata.obs`
-    compare: Union[`'genes'`, `'bases'`, `'order'`]
+    compare: Str, optional (default: `'genes'`)
         only used when `show_scatterplot=True`,
-        creates
+        creates a drop-down:
         if `'genes'`, clicking a gene in highlighted heatmap
             drow-down menu will contain values from `genes` and clicking
             a gene in highlighted heatmap will plot scatterplot of the 2
@@ -452,9 +452,9 @@ def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'],
     cont_cmap: Union[List[Str], NoneType], optional (default, `None`)
         colormap of the heatmap,
         if `None`, use `Viridis256`
-    height: Int, optional (default: `600`)
+    height: Int, optional (default: `200`)
         height of the heatmap
-    width: Int, optional (default: `200`)
+    width: Int, optional (default: `600`)
         width of the heatmap
     **scatter_kwargs:
         additional argument for `ipl.experimental.scatter`,
@@ -484,11 +484,16 @@ def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'],
             x, y = x, which
 
         return scatter2(adata, x=x, y=y, color=group, indices=indices,
-                        jitter=0.01, **scatter_kwargs).opts(axiswise=True, framewise=True)
+                        **scatter_kwargs).opts(axiswise=True, framewise=True)
 
     assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
     assert subsample in (None, 'none','decimate'), f'Invalid subsampling strategy `{subsample}`. ' \
             'Possible values are `None, \'none\', \'decimate\'`.'
+
+    assert compare in ('genes', 'basis', 'order'), f'`compare` must be one of `\'genes\', \'basis\', \'order\'`.'
+
+    if cont_cmap is None:
+        cont_cmap = Viridis256
 
     is_ordered = False
     scatter_kwargs['use_original_limits'] = True
@@ -503,7 +508,7 @@ def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'],
     else:
         groups = [k for k in adata.obs.keys() if is_categorical(adata.obs[k])]
 
-    kdims=[hv.Dimension('Group',values=groups, selected=groups[0])]
+    kdims=[hv.Dimension('Group',values=groups, default=groups[0])]
 
     hm = hv.DynamicMap(lambda g: _heatmap(adata, genes, agg_fns=agg_fns, group=g,
                                           hover=hover, use_raw=use_raw,
@@ -520,15 +525,15 @@ def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'],
 
     if compare == 'basis':
         basis = [b.lstrip('X_') for b in adata.obsm.keys()]
-        kdims += [hv.Dimension('Components', values=basis, selected=basis[0])]
+        kdims += [hv.Dimension('Components', values=basis, default=basis[0])]
     elif compare == 'genes':
-        kdims += [hv.Dimension('Genes', values=genes, selected=genes[0])]
+        kdims += [hv.Dimension('Genes', values=genes, default=genes[0])]
     else:
         is_ordered = True
         k = scatter_kwargs.pop('order_key', None)
         assert k is not None or order_keys != [], f'No order keys specified.'
 
-        if k not in order_keys:
+        if k is not None and k not in order_keys:
             order_keys.append(k)
 
         for k in order_keys:
