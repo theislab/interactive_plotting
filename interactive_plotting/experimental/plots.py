@@ -332,7 +332,7 @@ def _heatmap(adata, genes, group='louvain', sort_genes=True, use_raw=False,
     genes: List[Str]
         genes in `adata.var_names`
     group_key: Str
-        key in adata.obs, must be categorical
+        key in `adata.obs`, must be categorical
     show_scatterplot: Bool, optional (default: `False`)
         whether to show gene expression
         in pseudotime for selected gene - TODO: make more general
@@ -371,31 +371,71 @@ def _heatmap(adata, genes, group='louvain', sort_genes=True, use_raw=False,
     return heatmap.opts(frame_width=plot_width, frame_height=plot_height, colorbar=colorbar, cmap=cmap)
 
 def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'], use_raw=False,
-            order_keys=[], hover=True, show_highlight=True, show_scatter=True,
+            order_keys=[], hover=True, show_highlight=False, show_scatter=False,
             subsample='decimate', keep_frac=0.2, seed=None,
             xrotation=90, yrotation=0, colorbar=True, cont_cmap=Viridis256,
             width=600, height=200, **scatter_kwargs):
     '''
-    adata:
-    genes:
-    groups:
-    compare:
-    agg_fns:
-    use_raw:
-    order_keys:
-    hover:
-    show_highlight:
-    show_scatter:
-    subsample:
-    keep_frac:
-    seed:
-    xrotation:
-    yrotation:
-    colorbar:
-    cont_cmap:
-    width:
-    height:
+    Plot a heatmap with groups selected from drop-down menu.
+
+    adata: anndata.AnnData
+        adata object
+    genes: List[Str]
+        genes in `adata.var_names`
+    groups: List[Str], optional (default: `None`)
+        categorical observation in `adata.obs`,
+        if `None`, get all groups from `adata.obs`
+    compare: Union[`'genes'`, `'bases'`, `'order'`]
+        only used when `show_scatterplot=True`,
+        creates
+        if `'genes'`, clicking a gene in highlighted heatmap
+            drow-down menu will contain values from `genes` and clicking
+            a gene in highlighted heatmap will plot scatterplot of the 2
+            genes with groups colored in
+        if `'basis'`
+            drow-down menu will contain available bases and clicking
+            a gene in highlighted heatmap will plot the gene in the selected
+            embedding with its expression colored in
+        if `'order'`:
+            drop-down menu will contain values from `order_keys`,
+            and clicking on a gene in highlighted heatmap will plot its expression
+            in selected order
+    agg_fns: List[Str], optional (default: `['mean', 'var']`
+        names of pandas' aggregation functions, such `'min'`, ...
+        the first function specified is mapped to colors
+    use_raw: Bool, optional (default: `False`)
+        whether to use `.raw` for gene expression
+    order_keys: List[Str], optional (default: `None`)
+        keys in `adata.obs`, used when `compare='order'`
+    hover: Bool, optional (default: `True`)
+        whether to display hover information over the heatmap
+    show_highlight: Bool, optional (default: `False`)
+        whether to show when using boxselect
+    show_scatter: Bool, optional (default: `False`)
+        whether to show a scatterplot,
+        if `True`, overrides `show_highlight=False`
+    subsample: Union[Str, NoneType], optional (default: `'decimate'`)
+        how to subsample the data
+    keep_frac: Float, optional (default: `0.2`)
+        fraction of cells to keep, used when `subsample='decimate'`
+    seed: Union[Float, NoneType], optional (default: `None`)
+        random seed, used when `subsample='decimate'`
+    xrotation: Int, optional (default: `90`)
+        rotation of labels on x-axis
+    yrotation: Int, optional (default: `0`)
+        rotation of labels on y-axis
+    colorbar: Bool, optional (default: `True`)
+        whether to show colorbar
+    cont_cmap: Union[List[Str], NoneType], optional (default, `None`)
+        colormap of the heatmap,
+        if `None`, use `Viridis256`
+    height: Int, optional (default: `600`)
+        height of the heatmap
+    width: Int, optional (default: `200`)
+        width of the heatmap
     **scatter_kwargs:
+        additional argument for `ipl.experimental.scatter`,
+        only used when `show_scatter=True`
     '''
 
     def _highlight(group, index):
