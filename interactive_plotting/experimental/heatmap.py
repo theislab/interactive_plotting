@@ -17,6 +17,8 @@ import numpy as np
 import pandas as pd
 import datashader as ds
 import holoviews as hv
+import scanpy as sc
+import warnings
 
 
 def groupby(adata, key, genes=None, aggregators={}, callback=lambda _: None, agg_sep='_'):
@@ -38,7 +40,7 @@ def groupby(adata, key, genes=None, aggregators={}, callback=lambda _: None, agg
     groups = df.groupby(key)
 
     agg_fns = {}
-    for column in filter(lambda c: c != key, df.columns):
+    for column in genes:#filter(lambda c: c != key, df.columns):
         col = df[column]
         agg = aggregators.get(column, None) or callback(col)
         if agg is not None:
@@ -53,7 +55,7 @@ def groupby(adata, key, genes=None, aggregators={}, callback=lambda _: None, agg
         elif is_string_dtype(col):
             agg = (mode, )
         elif is_numeric_dtype(col):
-            agg = ('mean', 'max', 'min')
+            agg = ('min', 'max', 'mean', 'var')
         else:
             raise RuntimeError(f'Inferred type `{infer_dtype(col)}` of column `{column}` is not supported.')
 
@@ -63,115 +65,6 @@ def groupby(adata, key, genes=None, aggregators={}, callback=lambda _: None, agg
     res.columns = list(map(lambda c: agg_sep.join(c), res.columns))
 
     return res
-
-
-def heatmap(adata, genes, group_key='louvain', show_scatterplot=False):
-    '''
-    Params
-    -------
-    adata: anndata.AnnData
-        adata object
-    genes: List[Str]
-        genes in `adata.var_names`
-    group_key: Str
-        key in adata.obs, must be categorical
-    show_scatterplot: Bool, optional (default: `False`)
-        whether to show gene expression
-        in pseudotime for selected gene - TODO: make more general
-
-    Returns
-    -------
-    '''
-
-    def heatmap_hl(original, index):
-        nonlocal gene_order
-        nonlocal group_order
-
-        if not index:
-            return original
-
-        x, y, z = [original.iloc[index][key] for key in ['x', 'y', 'z']]
-
-        res = {(k1, k2):v for k1, k2, v in zip(x, y, z)}
-        x = sorted(set(x), key=lambda g: gene_order[g])
-        y = sorted(set(y), key=lambda g: group_order[g])
-
-        return hv.HeatMap({'x': x, 'y': y, 'z': [[res[k1, k2] for k1 in x] for k2 in y]},
-                          kdims=[('x', 'Gene'), ('y', 'Group')], vdims=[('z', 'Expression')])
-
-    genes = sorted(genes)[::-1]
-    groups = sorted(list(adata.obs[group_key].cat.categories))
-    # groups = np.random.permutation(groups)
-    group_order = dict(zip(groups, range(len(groups))))
-    gene_order = dict(zip(genes, range(len(genes))))
-
-    ad = adata[np.in1d(adata.obs[group_key], groups)][:, genes]
-    df = pd.DataFrame(ad.X, columns=genes)
-    df['group'] = list(map(str, ad.obs[group_key]))
-    val = df.groupby('group').max().values
-
-    x = hv.Dimension('x', label='Gene')
-    y = hv.Dimension('y', label='Group')
-    z = hv.Dimension('z', label='Expression')
-
-    heatmap = hv.HeatMap({'x': np.array(genes), 'y': np.array(groups), 'z': val},
-                         kdims=[('x', 'Gene'), ('y', 'Group')], vdims=[('z', 'Expression')]).opts(tools=['box_select', 'hover'], xrotation=90)
-    sel = Selection1D(source=heatmap)
-    mean_sel = hv.DynamicMap(lambda index: heatmap_hl(heatmap, index),
-                             kdims=[], streams=[sel])
-    tap = hv.streams.Tap(source=mean_sel, x=genes[0], y=adata.obs[group_key].values[0])
-
-    if show_scatterplot:
-        df['pseudotime'] = list(adata.obs['dpt_pseudotime'])
-
-    if '{}_colors'.format(group_key) in adata.uns.keys():
-        color_dict = dict(zip(adata.obs[group_key].cat.categories, adata.uns[f'{group_key}_colors']))
-    else:
-        color_dict = dict(zip(adata.obs[group_key].cat.categories, ['black'] * len(df)))
-
-    df['color'] = [color_dict[c] for c in df['group'].values]
-
-    df = df.melt(value_vars=genes, id_vars=(['pseudotime'] if 'pseudotime' in df else []) + ['group', 'color'],
-            var_name='gene', value_name='expression')
-    dataset = hv.Dataset(df, vdims=['expression', 'color'])
-    dmap = hv.DynamicMap(lambda x, y: scatter(adata, x, group_key, subsample=None),
-                         #hv.Scatter(dataset.select(gene=x),
-                         #                       kdims='pseudotime',
-                         #                       label='{} @ {}[{}]'.format(x, by, y)).opts(color='color', axiswise=True, framewise=True),
-                         streams=[tap])
-
-    # TODO: pass as argument
-    subsample = 'none'
-    vdims = 'z'
-    categorical = True
-    show_legend = False
-    cmap = Sets1to3
-    cmap = odict(zip(adata.obs[group_key].cat.categories, adata.uns.get(f'{group_key}_colors', cmap)))
-    keep_frac = adata.n_obs * 0.5
-    seed = 42
-
-    if subsample == 'datashade':
-        aggregator = None
-        if vdims is not None:
-            aggregator = ds.count_cat(vdims) if categorical else ds.mean(vdims)
-        dmap = dynspread(datashade(dmap, aggregator=aggregator,
-                                      color_key=cmap, cmap=cmap,
-                                      streams=[hv.streams.RangeXY(transient=True), hv.streams.PlotSize],
-                                      min_alpha=255).opts(axiswise=True, framewise=True), threshold=0.8, max_px=5)
-        if show_legend and categorical:
-            legend = hv.NdOverlay({k: hv.Points([0, 0], label=str(k)).opts(size=0, color=v)
-                                   for k, v in cmap.items()})
-
-    elif subsample == 'decimate':
-        dmap = decimate(dmap, max_samples=int(adata.n_obs * keep_frac),
-                           streams=[hv.streams.RangeXY(transient=True)], random_seed=seed)
-
-    dmap = dmap.opts(axiswise=True, framewise=True)
-
-    if show_scatterplot:
-        return (heatmap.opts(frame_width=600, colorbar=True) + mean_sel.opts(colorbar=True) + dmap).cols(1)
-
-    return (heatmap.opts(frame_width=600, colorbar=True) + mean_sel.opts(colorbar=True)).cols(1)
 
 
 def pad(minn, maxx, padding=0.1):
@@ -189,30 +82,134 @@ def minmax(component, perc=None, is_sorted=False):
     return (np.nanmin(component), np.nanmax(component)) if not is_sorted else (component[0], component[-1])
 
 
-def scatter(adata, gene, group, pseudotime_key='dpt_pseudotime', subsample='datashade', steps=40, keep_frac=None,
-            seed=None, legend_loc='top_right', cols=None, size=4, use_raw=False,
-            cmap=None, show_legend=True, plot_height=400, plot_width=400):
-
-    adata_mraw = adata.raw if use_raw else adata
-    gene_ix = np.where(adata_mraw.var_names == gene)[0][0]
-    expression = np.squeeze(np.array(adata_mraw.X[:, gene_ix]))
-
-    ixs = np.argsort(adata.obs[pseudotime_key])
-
-    return _scatter(adata, x=adata.obs[pseudotime_key].values[ixs],
-                    y=expression[ixs],
-                    condition=adata.obs[group][ixs],
-                    by=group,
-                    xlabel=pseudotime_key,
-                    ylabel='expression',
-                    title=gene,
+def scatter(adata, x, y, color=None, order_key=None, indices=None, subsample='datashade', use_raw=False,
+            size=5, jitter=None, perc=None, cmap=None, 
+            hover_keys=None, hover_dims=(10, 10),
+            keep_frac=0.2, steps=40,
+            seed=None, use_original_limits=False,
+            legend_loc='top_right', show_legend=True, plot_height=600, plot_width=600):
+    '''
+    adata: anndata.AnnData
+    x:
+    y:
+    color:
+    order_key:
+    indices:
+    subsample:
+    use_raw:
+    size:
+    jitter:
+    perc:
+    hover_keys:
+    hover_dims:
+    keep_frac:
+    steps:
+    seed:
+    use_original_limits:
+    legend_loc:
+    show_legend:
+    plot_height:
+    plot_width:
+    
+    '''
+        
+    if hover_keys is not None:
+        for h in hover_keys:
+            assert h in adata.obs, f'Hover key `{h}` not found in `adata.obs`.'
+    
+    if perc is not None:
+        assert len(perc) == 2, f'`perc` must be of length `2`, found: `{len(perc)}`.'
+        assert all((p is not None for p in perc)), '`perc` cannot contain `None`.'
+        perc = sorted(perc)
+    
+    assert len(hover_dims) == 2, f'Expected `hover_dims` to be of length `2`, found `{len(hover_dims)}`.'
+    assert all((isinstance(d, int) for d in hover_dims)), 'All of `hover_dims` must be of type `int`.'
+    assert all((d > 1 for d in hover_dims)), 'All of `hover_dims` must be `> 1`.'
+        
+    adata_mraw = get_mraw(adata)
+    if adata_mraw is adata:
+        warnings.warn('Failed fetching the `.raw`. attribute of `adata`.')
+        
+    if indices is None:
+        indices = np.arange(adata_mraw.n_obs)
+    adata_mraw = adata_mraw[indices, :]
+    
+    xlim, ylim = None, None
+    if order_key is not None:
+        assert order_key in adata.obs, f'`{order_key}` not found in `adata.obs`.'
+        ixs = np.argsort(adata.obs[order_key][indices])
+    else:
+        ixs = np.arange(adata_mraw.n_obs)
+    
+    if x is None:
+        if order_key is not None:
+            x, xlabel = adata.obs[order_key][indices][ixs], order_key
+        else:
+            x, xlabel = ixs, 'index'  # jitter
+    else:
+        x, xlabel, xlim = get_data(x, adata, adata_mraw, indices, use_original_limits)
+        
+    y, ylabel, ylim = get_data(y, adata, adata_mraw, indices, use_original_limits, inc=1)
+    
+    # jitter
+    if jitter is not None:
+        msg = 'Using `jitter` != `None` and `use_original_limits=True` can negatively impact the limits.'
+        if isinstance(jitter, (tuple, list)):
+            assert len(jitter) == 2, f'`jitter` must be of length `2`, found `{len(jitter)}`.'
+            if any((j is not None for j in jitter)) and use_original_limits:
+                warnings.warn(msg)
+        else:
+            assert isinstance(jitter, float), 'Expected` jitter` to be of type `float`, found `{type(jitter).__name__}`.'
+            warnings.warn(msg)
+        
+    x = x.astype(np.float64)
+    y = y.astype(np.float64)
+    
+    if color is not None:
+        if color in adata.obs:
+            condition = adata.obs[color][indices][ixs]
+        else:
+            if isinstance(color, int):
+                color = adata_mraw.var_names[color]
+            assert color in adata_mraw.var_names
+            condition = adata_mraw.obs_vector(color)[ixs]
+    else:
+        condition = None
+    
+    hover = None
+    if hover_keys is not None:
+        hover = {'index':  ixs}
+        for key in hover_keys:
+            hover[key] = adata.obs[key][indices][ixs]
+            
+    return _scatter(adata, x=x.copy(),
+                    y=y.copy(),
+                    condition=condition,
+                    by=color,
+                    xlabel=xlabel,
+                    ylabel=ylabel,
+                    title=color,
+                    hover=hover,
+                    jitter=jitter,
+                    perc=perc,
+                    xlim=xlim,
+                    ylim=ylim,
+                    hover_width=hover_dims[1],
+                    hover_height=hover_dims[0],
                     subsample=subsample, steps=steps, keep_frac=keep_frac, seed=seed, legend_loc=legend_loc,
                     size=size, cmap=cmap, show_legend=show_legend, plot_height=plot_height, plot_width=plot_width)
 
 
-def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=40, keep_frac=None,
-            seed=None, legend_loc='top_right', size=4, xlabel=None, ylabel=None, title=None,
-            cmap=None, show_legend=True, plot_height=400, plot_width=400):
+def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=40, keep_frac=0.2,
+             seed=None, legend_loc='top_right', size=4, xlabel=None, ylabel=None, title=None,
+             use_raw=True, hover=None,
+             hover_width=10,
+             hover_height=10,
+             jitter=None,
+             perc=None,
+             xlim=None,
+             ylim=None,
+             cmap=None, show_legend=True, plot_height=400, plot_width=400):
     '''
     Scatter plot for categorical observations. TODO: update docs, maybe not pass adata
 
@@ -229,7 +226,7 @@ def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=
     steps: Union[Int, Tuple[Int, Int]], optional (default: `40`)
         step size when the embedding directions
         larger step size corresponds to higher density of points
-    keep_frac: Float, optional (default: `adata.n_obs / 5`)
+    keep_frac: Float, optional (default: `0.2`)
         number of observations to keep when `subsample='decimate'`
     lazy_loading: Bool, optional (default: `False`)
         only visualize when necessary
@@ -261,64 +258,260 @@ def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=
     plot: panel.panel
         holoviews plot wrapped in `panel.panel`
     '''
-
-    if keep_frac is None:
-        keep_frac = 0.2
-
+        
     assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
     # assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
-
+    adata_mraw = get_mraw(adata)
+    
     if subsample == 'uniform':
         cb_kwargs = {'steps': steps}
     elif subsample == 'density':
         cb_kwargs = {'size': int(keep_frac * adata.n_obs), 'seed': seed}
     else:
         cb_kwargs = {}
-
+    
     categorical = False
     if condition is None:
-        cmap = 'black'
+        cmap = ['black'] * len(x) if subsample == 'datashade' else 'black'
     elif is_categorical(condition):
         categorical = True
         cmap = Sets1to3 if cmap is None else cmap
         cmap = odict(zip(condition.cat.categories, adata.uns.get(f'{by}_colors', cmap)))
     else:
-        perc = None
         cmap = Viridis256 if cmap is None else cmap
-        if perc is not None:
-            condition = percentile(condition, perc)
+        
+    jitter_x, jitter_y = None, None
+    if isinstance(jitter, (tuple, list)):
+        assert len(jitter) == 2, f'`jitter` must be of length `2`, found `{len(jitter)}`.'
+        jitter_x, jitter_y = jitter
+    elif jitter is not None:
+        jitter_x, jitter_y = jitter, jitter
+                
+    if jitter_x is not None:
+        x += np.random.normal(0, jitter_x, size=x.shape)
+    if jitter_y is not None:
+        y += np.random.normal(0, jitter_y, size=y.shape)
 
     data = {'x': x, 'y': y}
-    vdims = None
+    vdims = []
     if condition is not None:
         data['z'] = condition
-        vdims = 'z'
+        vdims.append('z')
+    
+    hovertool = None
+    if hover is not None:
+        for k, dt in hover.items():
+            vdims.append(k)
+            data[k] = dt
+        hovertool = HoverTool(tooltips=[(key.capitalize(), f'@{key}')
+                                        for key in (['index'] if subsample == 'datashade' else hover.keys())])
+        
+    if vdims == []:
+        vdims = None
 
-    xlim, ylim = pad(*minmax(x)), pad(*minmax(y))
+    if xlim is None:
+        xlim = pad(*minmax(x))
+    if ylim is None:
+        ylim = pad(*minmax(y))
+        
     scatter = (hv.Scatter(data, kdims=[('x', 'x' if xlabel is None else xlabel),
                                        ('y', 'y' if ylabel is None else ylabel)], vdims=vdims)
                .sort(vdims)
-               .opts(cmap=cmap, color_index=vdims, show_legend=show_legend))
-
+               .opts(size=size, xlim=xlim, ylim=ylim))
+    
+    if categorical:
+        scatter = scatter.opts(cmap=cmap, color='z', show_legend=show_legend, legend_position=legend_loc)
+    elif 'z' in data:
+        scatter = scatter.opts(cmap=cmap, color='z',
+                               clim=tuple(map(float, minmax(data['z'], perc))),
+                               colorbar=True,
+                               colorbar_opts={'width': 20})
+    else:
+        scatter = scatter.opts(color='black')
+        
     legend = None
     if subsample == 'datashade':
-        aggregator = None
-        if vdims is not None:
-            aggregator = ds.count_cat(vdims) if categorical else ds.mean(vdims)
-        scatter = dynspread(datashade(scatter, aggregator=aggregator,
+        subsampled = dynspread(datashade(scatter, aggregator=(ds.count_cat('z') if categorical else ds.mean('z')) if 'z' in vdims else None,
                                       color_key=cmap, cmap=cmap,
                                       streams=[hv.streams.RangeXY(transient=True), hv.streams.PlotSize],
                                       min_alpha=255).opts(axiswise=True, framewise=True), threshold=0.8, max_px=5)
         if show_legend and categorical:
             legend = hv.NdOverlay({k: hv.Points([0, 0], label=str(k)).opts(size=0, color=v)
                                    for k, v in cmap.items()})
+        if hover is not None:
+            t = hv.util.Dynamic(rasterize(scatter, width=hover_width, height=hover_height, streams=[hv.streams.RangeXY],
+                                          aggregator=ds.reductions.min('index')), operation=hv.QuadMesh)\
+                                              .opts(tools=[hovertool], axiswise=True, framewise=True,
+                                                    alpha=0, hover_alpha=0.25,
+                                                    height=plot_height, width=plot_width)
+            scatter = t * subsampled
+        else:
+            scatter = subsampled
 
     elif subsample == 'decimate':
         scatter = decimate(scatter, max_samples=int(adata.n_obs * keep_frac),
                            streams=[hv.streams.RangeXY(transient=True)], random_seed=seed)
 
     if legend is not None:
-        scatter *= legend
+        scatter = (scatter * legend).opts(legend_position=legend_loc)
 
-    return scatter.opts(title=title if title is not None else '',
-                        height=plot_height, width=plot_width, xlim=xlim, ylim=ylim)
+    scatter = scatter.opts(title=title if title is not None else '',
+                           frame_height=plot_height, frame_width=plot_width, xlim=xlim, ylim=ylim)
+    return scatter.opts(tools=[hovertool]) if hovertool is not None else scatter
+
+def _heatmap(adata, genes, group='louvain', sort_genes=True, use_raw=False,
+            xrotation=90, yrotation=0, colorbar=True,
+            plot_width=600, plot_height=300, cmap=Viridis256,
+            hover=True, agg_fns=['mean']):
+    '''
+    Params
+    -------
+    adata: anndata.AnnData
+        adata object
+    genes: List[Str]
+        genes in `adata.var_names`
+    group_key: Str
+        key in adata.obs, must be categorical
+    show_scatterplot: Bool, optional (default: `False`)
+        whether to show gene expression
+        in pseudotime for selected gene - TODO: make more general
+
+    Returns
+    -------
+    '''
+    assert group in adata.obs
+    assert is_categorical(adata.obs[group])
+    assert len(agg_fns) > 0
+    
+    for g in genes:
+        assert g in adata.var_names, f'Unable to find gene `{g}` in `adata.var_names`.'
+
+    genes = sorted(genes) if sort_genes else genes
+    groups = sorted(list(adata.obs[group].cat.categories))
+
+    ad = adata[np.in1d(adata.obs[group], groups)][:, genes]
+    df = pd.DataFrame(get_mraw(ad).X, columns=genes)
+    df['group'] = list(map(str, ad.obs[group]))
+    groupby = df.groupby('group')
+    
+    vals = {agg_fn: groupby.agg(agg_fn) for agg_fn in agg_fns}    
+    z_value = vals.pop(agg_fns[0])
+
+    x = hv.Dimension('x', label='Gene')
+    y = hv.Dimension('y', label='Group')
+    z = hv.Dimension('z', label='Expression')
+    vdims = [(k, k.capitalize()) for k in vals.keys()]
+    
+    heatmap = hv.HeatMap({'x': np.array(genes), 'y': np.array(groups), 'z': z_value, **vals},
+                         kdims=[('x', 'Gene'), ('y', 'Group')],
+                         vdims=[('z', 'Expression')] + vdims).opts(tools=['box_select'] + (['hover'] if hover else []),
+                                                                   xrotation=xrotation, yrotation=yrotation)
+
+    return heatmap.opts(frame_width=plot_width, frame_height=plot_height, colorbar=colorbar, cmap=cmap)
+
+
+def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'], use_raw=False,
+            order_keys=[], hover=True, show_highlight=True, show_scatter=True,
+            subsample='decimate', keep_frac=0.2, seed=None,
+            xrotation=90, yrotation=0, colorbar=True, cont_cmap=Viridis256,
+            width=600, height=200, **scatter_kwargs):
+    '''
+    adata:
+    genes:
+    groups:
+    compare:
+    agg_fns:
+    use_raw:
+    order_keys:
+    hover:
+    show_highlight: 
+    show_scatter:
+    subsample:
+    keep_frac:
+    seed:
+    xrotation:
+    yrotation:
+    colorbar:
+    cont_cmap:
+    width:
+    height:
+    **scatter_kwargs:
+    '''
+    
+    def _highlight(group, index):
+        original = hm[group]
+        if not index:
+            return original
+        
+        return original.iloc[sorted(index)]
+    
+    def _scatter(group, which, gwise, x, y):
+        indices = adata.obs[group] == y if gwise else np.isin(adata.obs[group], highlight[group].data['y'])
+        if is_ordered:
+            scatter_kwargs['order_key'] = which
+            x, y = None, x
+        elif f'X_{which}' in adata.obsm:
+            group = x
+            x, y = which, which
+        else:
+            x, y = x, which
+            
+        return scatter2(adata, x=x, y=y, color=group, indices=indices, 
+                        jitter=0.01, **scatter_kwargs).opts(axiswise=True, framewise=True)
+    
+    is_ordered = False
+    scatter_kwargs['use_original_limits'] = False
+    scatter_kwargs['subsample'] = None
+    if 'plot_width' not in scatter_kwargs:
+        scatter_kwargs['plot_width'] = 300
+    if 'plot_height' not in scatter_kwargs:
+        scatter_kwargs['plot_height'] = 300
+    
+    if groups is not None:
+        assert len(groups) > 0, f'Number of groups `> 1`.'
+    else:
+        groups = [k for k in adata.obs.keys() if is_categorical(adata.obs[k])]
+    
+    kdims=[hv.Dimension('Group',values=groups, selected=groups[0])]
+    
+    hm = hv.DynamicMap(lambda g: _heatmap(adata, genes, agg_fns=agg_fns, group=g,
+                                          hover=hover, use_raw=use_raw,
+                                          cmap=cont_cmap,
+                                          xrotation=xrotation, yrotation=yrotation,
+                                          colorbar=colorbar), kdims=kdims).opts(frame_height=height,
+                                                                                frame_width=width)
+    if not show_highlight and not show_scatter:
+        return hm
+    
+    highlight = hv.DynamicMap(_highlight, kdims=kdims, streams=[Selection1D(source=hm)])
+    if not show_scatter:
+        return (hm + highlight).cols(1)
+    
+    if compare == 'basis':
+        basis = [b.lstrip('X_') for b in adata.obsm.keys()]
+        kdims += [hv.Dimension('Components', values=basis, selected=basis[0])]
+    elif compare == 'genes':
+        kdims += [hv.Dimension('Genes', values=genes, selected=genes[0])]
+    else:
+        is_ordered = True
+        k = scatter_kwargs.pop('order_key', None)
+        assert k is not None or order_keys != [], f'No order keys specified.'
+        
+        if k not in order_keys:
+            order_keys.append(k)
+            
+        for k in order_keys:
+            assert k in adata.obs, f'Order key `{k}` not found in `adata.obs`.'
+            
+        kdims += [hv.Dimension('Order', values=order_keys)]
+                               
+    kdims += [hv.Dimension('Groupwise', type=bool, values=[True, False], default=True)]
+        
+    scatter_stream = hv.streams.Tap(source=highlight, x=genes[0], y=adata.obs[groups[0]].values[0])
+    scatter = hv.DynamicMap(_scatter, kdims=kdims, streams=[scatter_stream])
+    
+    if subsample == 'decimate':
+        scatter = decimate(scatter, max_samples=int(adata.n_obs * keep_frac),
+                           streams=[hv.streams.RangeXY(transient=True)], random_seed=seed)
+        
+    return (hm + highlight + scatter).cols(1)
