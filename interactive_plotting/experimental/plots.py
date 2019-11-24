@@ -12,6 +12,7 @@ from bokeh.palettes import Viridis256
 from holoviews.streams import Selection1D
 from holoviews.operation import decimate
 from holoviews.operation.datashader import datashade, dynspread, rasterize, spread
+from bokeh.models import HoverTool
 
 import numpy as np
 import pandas as pd
@@ -39,17 +40,17 @@ def minmax(component, perc=None, is_sorted=False):
 def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='datashade', use_raw=False,
              size=5, jitter=None, perc=None, cmap=None,
              hover_keys=None, hover_dims=(10, 10),
-             keep_frac=0.2, steps=40,
-             seed=None, use_original_limits=False,
+             keep_frac=0.2, steps=40, seed=None, use_original_limits=False,
              legend_loc='top_right', show_legend=True, plot_height=600, plot_width=600):
     '''
     Params
     -------
     adata: anndata.AnnData
         adata object
-    x: Union[Int, Str]
+    x: Union[Int, Str, None]
         values on the x-axis
         if of type `Int`, it corresponds to index in `adata.var_names`
+        if of type `NoneType`, x-axis will be the order based on `order_key`
         if of type `Str`, it can be either:
             - key in `adata.var_names`
             - `'{basis_name}:{index}'` or `'{basis_name}'`, such as
@@ -73,7 +74,11 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
     indices: Union[np.array[Int], np.array[Bool], NoneType], optional (default: `None`)
         subset of cells to plot,
         if `None`, plot all cells
-    subsample: Union[Str, NoneType]
+    subsample: Str, optional (default: `'datashade'`)
+        subsampling strategy for large data
+        possible values are `None, 'none', 'datashade', 'decimate'`
+        using `subsample='datashade'` is preferred over other options since it does not subset
+        when using `subsample='datashade'`, colorbar is not visible
     use_raw: Bool, optional (default: `False`)
         whether to use `.raw` attribute
     size: Int, optional (default: `5`)
@@ -93,7 +98,9 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
         only used when `subsample='datashade'`
     keep_frac: Float, optional (default: `0.2`)
         fraction of cells to keep, used when `subsample='decimate'`
-    steps: Union[]
+    steps: Union[Int, Tuple[Int, Int]], optional (default: `40`)
+        step size when the embedding directions
+        larger step size corresponds to higher density of points
     seed: Union[Float, NoneType], optional (default: `None`)
         random seed, used when `subsample='decimate'`
     use_original_limits: Bool, optional (default: `False`)
@@ -125,6 +132,10 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
     assert len(hover_dims) == 2, f'Expected `hover_dims` to be of length `2`, found `{len(hover_dims)}`.'
     assert all((isinstance(d, int) for d in hover_dims)), 'All of `hover_dims` must be of type `int`.'
     assert all((d > 1 for d in hover_dims)), 'All of `hover_dims` must be `> 1`.'
+
+    assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
+    assert subsample in (None, 'none', 'datashade', 'decimate'), f'Invalid subsampling strategy `{subsample}`. ' \
+            'Possible values are `None, \'none\'\'datashade\', \'decimate\'`.'
 
     adata_mraw = get_mraw(adata)
     if adata_mraw is adata:
@@ -378,6 +389,7 @@ def _heatmap(adata, genes, group, sort_genes=True, use_raw=False,
     return heatmap.opts(frame_width=plot_width, frame_height=plot_height, colorbar=colorbar, cmap=cmap)
 
 
+@wrap_as_col
 def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'], use_raw=False,
             order_keys=[], hover=True, show_highlight=False, show_scatter=False,
             subsample='decimate', keep_frac=0.2, seed=None,
@@ -424,8 +436,9 @@ def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'],
     show_scatter: Bool, optional (default: `False`)
         whether to show a scatterplot,
         if `True`, overrides `show_highlight=False`
-    subsample: Union[Str, NoneType], optional (default: `'decimate'`)
-        how to subsample the data
+    subsample: Str, optional (default: `'decimate'`)
+        subsampling strategy for large data
+        possible values are `None, 'none', 'decimate'`
     keep_frac: Float, optional (default: `0.2`)
         fraction of cells to keep, used when `subsample='decimate'`
     seed: Union[Float, NoneType], optional (default: `None`)
@@ -472,6 +485,10 @@ def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'],
 
         return scatter2(adata, x=x, y=y, color=group, indices=indices,
                         jitter=0.01, **scatter_kwargs).opts(axiswise=True, framewise=True)
+
+    assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
+    assert subsample in (None, 'none','decimate'), f'Invalid subsampling strategy `{subsample}`. ' \
+            'Possible values are `None, \'none\', \'decimate\'`.'
 
     is_ordered = False
     scatter_kwargs['use_original_limits'] = True

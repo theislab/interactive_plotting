@@ -375,7 +375,7 @@ def wrap_as_panel(fn):
             return None
 
         res = pn.panel(res)
-        if reverse:
+        if reverse and hasattr(res, 'reverse'):
             res.reverse()
 
         return res
@@ -411,7 +411,7 @@ def wrap_as_col(fn):
             return None
 
         res = pn.panel(res)
-        if reverse:
+        if reverse and hasattr(res, 'reverse'):
             res.reverse()
 
         widgets = list(map(lambda w: pn.Row(*w), filter(len, chunkify(res[0], 3))))
