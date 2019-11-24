@@ -536,3 +536,38 @@ def sample_density(adata, size, bs='umap', seed=None, components=[0, 1]):
     ixs = sorted(state.choice(range(adata.n_obs), size=size, p=tmp['prob_density'], replace=False))
 
     return adata[ixs].copy(), ixs
+
+
+def get_xy_data(x, adata, adata_mraw, indices, use_original_limits=False, inc=0):
+    xlim = None
+    msg = f'Unable to decode key `{x}`.'
+    if not isinstance(x, int):
+        assert isinstance(x, str)
+        if x in adata_mraw.var_names:
+            ix = np.where(x == adata_mraw.var_names)[0][0]
+            xlabel = adata_mraw.var_names[ix]
+            x = adata_mraw.obs_vector(x)
+
+            return x, xlabel, xlim
+
+        x = x.lstrip('X_')
+        comp, *ix = x.split(':')
+        ix = int(ix[0]) if len(ix) else (int(x == 'diffmap') + inc)
+
+        if f'X_{comp}' in adata.obsm:
+            xlabel = f'{comp}_{ix}'
+            x = adata.obsm[f'X_{comp}'][indices, ix]
+            if use_original_limits:
+                xlim = pad(*minmax(adata.obsm[f'X_{comp}'][:, ix]))
+            return x, xlabel, xlim
+
+        raise RuntimeError(msg)
+
+    xlabel = adata_mraw.var_names[x]
+    x = adata_mraw.obs_vector(x)
+
+    return x, xlabel, xlim
+
+
+def get_mraw(adata):
+    return adata.raw if hasattr(adata, 'raw') and adata.raw is not None else adata
