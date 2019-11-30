@@ -36,7 +36,7 @@ except AssertionError:
 def scatter(adata, genes=None, basis=None, components=[1, 2], obs_keys=None,
             obsm_keys=None, use_raw=False, subsample='datashade', steps=40, keep_frac=None, lazy_loading=True,
             default_obsm_ixs=[0], sort=True, skip=True, seed=None, cols=None, size=4,
-            perc=None, show_perc=True, cmap=None, plot_height=400, plot_width=400):
+            perc=None, show_perc=True, cmap=None, plot_height=400, plot_width=400, save=None):
     '''
     Scatter plot for continuous observations.
 
@@ -104,6 +104,8 @@ def scatter(adata, genes=None, basis=None, components=[1, 2], obs_keys=None,
         height of the plot in pixels
     plot_width: Int, optional (default: `400`)
         width of the plot in pixels
+    save: Union[os.PathLike, Str, NoneType], optional (default: `None`)
+        path where to save the plot
 
     Returns
     --------
@@ -313,16 +315,21 @@ def scatter(adata, genes=None, basis=None, components=[1, 2], obs_keys=None,
     dynmaps = [d.opts(framewise=True, axiswise=True, frame_height=plot_height, frame_width=plot_width) for d in dynmaps]
 
     if cols is None:
-        return dynmaps[0].opts(title='', frame_height=plot_height, frame_width=plot_width)
+        plot = dynmaps[0].opts(title='', frame_height=plot_height, frame_width=plot_width)
+    else:
+        plot = hv.Layout(dynmaps).opts(title='', height=plot_height, width=plot_width).cols(cols)
 
-    return hv.Layout(dynmaps).opts(title='', height=plot_height, width=plot_width).cols(cols)
+    if save is not None:
+        hv.renderer('bokeh').save(plot, save)
+
+    return plot
 
 
 @wrap_as_panel
 def scatterc(adata, basis=None, components=[1, 2], obs_keys=None,
              obsm_keys=None, subsample='datashade', steps=40, keep_frac=None, hover=False, lazy_loading=True,
              default_obsm_ixs=[0], sort=True, skip=True, seed=None, legend_loc='top_right', cols=None, size=4,
-             cmap=None, show_legend=True, plot_height=400, plot_width=400):
+             cmap=None, show_legend=True, plot_height=400, plot_width=400, save=None):
     '''
     Scatter plot for categorical observations.
 
@@ -379,6 +386,8 @@ def scatterc(adata, basis=None, components=[1, 2], obs_keys=None,
         height of the plot in pixels
     plot_width: Int, optional (default: `400`)
         width of the plot in pixels
+    save: Union[os.PathLike, Str, NoneType], optional (default: `None`)
+        path where to save the plot
 
     Returns
     --------
@@ -616,7 +625,11 @@ def scatterc(adata, basis=None, components=[1, 2], obs_keys=None,
         dynmap = hv.Layout([d.opts(axiswise=True, framewise=True,
                                    frame_height=plot_height, frame_width=plot_width) for d in dynmaps]).cols(cols)
 
-    return dynmap.cols(cols).opts(title='', height=plot_height, width=plot_width) if cols is not None else dynmap
+    plot = dynmap.cols(cols).opts(title='', height=plot_height, width=plot_width) if cols is not None else dynmap
+    if save is not None:
+        hv.renderer('bokeh').save(plot, save)
+
+    return plot
 
 
 @wrap_as_col
