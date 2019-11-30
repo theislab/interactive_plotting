@@ -23,7 +23,7 @@ import bokeh
 
 
 from .utils import sample_unif, sample_density, to_hex_palette
-from bokeh.plotting import figure, show
+from bokeh.plotting import figure, show, save as bokeh_save
 from bokeh.models import ColumnDataSource, Slider, HoverTool, ColorBar, \
         Patches, Legend, CustomJS, TextInput, LabelSet, Select 
 from bokeh.models.ranges import Range1d
@@ -33,7 +33,7 @@ from bokeh.transform import linear_cmap, factor_mark, factor_cmap
 from bokeh.core.enums import MarkerType
 from bokeh.palettes import Set1, Set2, Set3, inferno, viridis
 from bokeh.models.widgets.buttons import Button
-
+from bokeh.io import output_file, save
 
 _bokeh_version = tuple(map(int, bokeh.__version__.split('.')))
 
@@ -367,7 +367,7 @@ def interactive_hist(adata, keys=['n_counts', 'n_genes'],
                      palette=None, display_all=True,
                      tools='pan, reset, wheel_zoom, save',
                      legend_loc='top_right',
-                     plot_width=None, plot_height=None,
+                     plot_width=None, plot_height=None, save=None,
                      *args, **kwargs):
     """Utility function to plot distributions with variable number of bins.
 
@@ -400,6 +400,8 @@ def interactive_hist(adata, keys=['n_counts', 'n_genes'],
         width of the plot
     plot_height: int, optional (default: `None`)
         height of the plot
+    save: Union[os.PathLike, Str, NoneType], optional (default: `None`)
+        path where to save the plot
     *args, **kwargs: arguments, keyword arguments
         addition argument to bokeh.models.figure
 
@@ -511,15 +513,21 @@ def interactive_hist(adata, keys=['n_counts', 'n_genes'],
 
     if _bokeh_version > (1, 0, 4):
         from bokeh.layouts import grid
-        show(grid(children=cols, ncols=2))
+        plot = grid(children=cols, ncols=2)
     else:
         cols = list(map(list, np.array_split(cols, np.ceil(len(cols) / 2))))
-        show(layout(children=cols, sizing_mode='fixed', ncols=2))
+        plot = layout(children=cols, sizing_mode='fixed', ncols=2)
+
+    if save is not None:
+        save = save if str(save).endswith('.html') else str(save) + '.html'
+        bokeh_save(plot, save)
+    else:
+        show(plot)
 
 
 def thresholding_hist(adata, key, categories, basis=['umap'], components=[1, 2],
                       bins='auto', palette=None, legend_loc='top_right',
-                      plot_width=None, plot_height=None):
+                      plot_width=None, plot_height=None, save=None):
     """Histogram with the option to highlight categories based on thresholding binned values.
 
     Params
@@ -544,6 +552,8 @@ def thresholding_hist(adata, key, categories, basis=['umap'], components=[1, 2],
         width of the plot
     plot_height: int, optional (default: `None`)
         height of the plot
+    save: Union[os.PathLike, Str, NoneType], optional (default: `None`)
+        path where to save the plot
 
     Returns
     --------
@@ -663,7 +673,13 @@ def thresholding_hist(adata, key, categories, basis=['umap'], components=[1, 2],
     interactive_hist_cb = CustomJS(args={'source': source, 'orig': orig, 'bins': slider}, code=_inter_hist_js_code)
     slider.js_on_change('value', interactive_hist_cb, callback)
 
-    show(column(row(hist_fig, column(slider, *inputs)), *emb_figs))
+    plot = column(row(hist_fig, column(slider, *inputs)), *emb_figs)
+
+    if save is not None:
+        save = save if str(save).endswith('.html') else str(save) + '.html'
+        bokeh_save(plot, save)
+    else:
+        show(plot)
 
 
 def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
@@ -673,7 +689,7 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
                n_velocity_genes=5, length_scale=0.2,
                path_key='louvain', color_key='louvain',
                share_y=True, legend_loc='top_right',
-               plot_width=None, plot_height=None, **kwargs):
+               plot_width=None, plot_height=None, save=None, **kwargs):
     """
     Function which shows expression levels as well as velocity per gene as a function of DPT.
 
@@ -723,6 +739,8 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
         width of the plot
     plot_height: int, optional (default: `None`)
         height of the plot
+    save: Union[os.PathLike, Str, NoneType], optional (default: `None`)
+        path where to save the plot
     **kwargs: kwargs
         keyword arguments for KRR or GP
 
@@ -831,13 +849,19 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
                                        show_cont_annot=show_cont_annot, legend_loc=legend_loc, genes=extra_genes,
                                        use_raw=use_raw, plot_width=plot_width, plot_height=plot_height))
 
-    show(column(*figs))
+    plot = columns(*figs)
+
+    if save is not None:
+        save = save if str(save).endswith('.html') else str(save) + '.html'
+        bokeh_save(plot, save)
+    else:
+        show(plot)
 
 
 def highlight_de(adata, basis='umap', components=[1, 2], n_top_genes=10,
                  de_keys='names, scores, pvals_adj, logfoldchanges',
                  cell_keys='', n_neighbors=5, fill_alpha=0.1, show_hull=True,
-                 legend_loc='top_right', plot_width=None, plot_height=None):
+                 legend_loc='top_right', plot_width=None, plot_height=None, save=None):
     """
     Highlight differential expression by hovering over clusters.
 
@@ -869,6 +893,8 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_genes=10,
         width of the plot
     plot_height: int, optional (default: `None`)
         height of the plot
+    save: Union[os.PathLike, Str, NoneType], optional (default: `None`)
+        path where to save the plot
 
     Returns
     --------
@@ -984,13 +1010,17 @@ def highlight_de(adata, basis='umap', components=[1, 2], n_top_genes=10,
     fig.xaxis.axis_label = f'{basis}_{components[0]}'
     fig.yaxis.axis_label = f'{basis}_{components[1]}'
 
-    show(fig)
+    if save is not None:
+        save = save if str(save).endswith('.html') else str(save) + '.html'
+        bokeh_save(fig, save)
+    else:
+        show(fig)
 
 
 def link_plot(adata, key, genes=None, basis=['umap', 'pca'], components=[1, 2],
              subsample=None, steps=[40, 40], sample_size=500,
              distance=2, cutoff=True, highlight_only=None, palette=None,
-             show_legend=False, legend_loc='top_right', plot_width=None, plot_height=None):
+             show_legend=False, legend_loc='top_right', plot_width=None, plot_height=None, save=None):
     """
     Display the distances of cells from currently highlighted cell.
 
@@ -1038,6 +1068,8 @@ def link_plot(adata, key, genes=None, basis=['umap', 'pca'], components=[1, 2],
         width of the plot
     plot_height: int, optional (default: `None`)
         height of the plot
+    save: Union[os.PathLike, Str, NoneType], optional (default: `None`)
+        path where to save the plot
 
     Returns
     --------
@@ -1170,7 +1202,13 @@ def link_plot(adata, key, genes=None, basis=['umap', 'pca'], components=[1, 2],
     fig.add_layout(color_bar, 'left')
 
     fig.add_tools(h_tool)
-    show(column(slider, row(*static_figs), row(*figs)))
+    plot = column(slider, row(*static_figs), row(*figs))
+
+    if save is not None:
+        save = save if str(save).endswith('.html') else str(save) + '.html'
+        bokeh_save(plot, save)
+    else:
+        show(plot)
 
 
 def _get_mappers(adata, df, genes=[], use_raw=True, sort=True):
