@@ -41,7 +41,7 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
              size=5, jitter=None, perc=None, cmap=None,
              hover_keys=None, hover_dims=(10, 10),
              keep_frac=0.2, steps=40, seed=None, use_original_limits=False,
-             legend_loc='top_right', show_legend=True, plot_height=600, plot_width=600):
+             legend_loc='top_right', show_legend=True, plot_height=600, plot_width=600, save=None):
     '''
     Plot a scatterplot.
 
@@ -117,6 +117,8 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
         height of the plot
     plot_width: Int, optional (default: `600`)
         width of the plot
+    save: Union[os.PathLike, Str, NoneType], optional (default: `None`)
+        path where to save the plot
 
     Returns
     -------
@@ -199,7 +201,7 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
         for key in hover_keys:
             hover[key] = adata.obs[key][indices][ixs]
 
-    return _scatter(adata, x=x.copy(), y=y.copy(),
+    plot = _scatter(adata, x=x.copy(), y=y.copy(),
                     condition=condition, by=color,
                     xlabel=xlabel,  ylabel=ylabel,
                     title=color, hover=hover, jitter=jitter,
@@ -207,6 +209,10 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
                     hover_width=hover_dims[1],hover_height=hover_dims[0],
                     subsample=subsample, steps=steps, keep_frac=keep_frac, seed=seed, legend_loc=legend_loc,
                     size=size, cmap=cmap, show_legend=show_legend, plot_height=plot_height, plot_width=plot_width)
+    if save is not None:
+        hv.renderer('bokeh').save(plot, save)
+
+    return plot
 
 
 def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=40, keep_frac=0.2,
@@ -400,7 +406,7 @@ def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'],
             order_keys=[], hover=True, show_highlight=False, show_scatter=False,
             subsample=None, keep_frac=0.2, seed=None,
             xrotation=90, yrotation=0, colorbar=True, cont_cmap=None,
-            height=200, width=600, **scatter_kwargs):
+            height=200, width=600, save=None, **scatter_kwargs):
     '''
     Plot a heatmap with groups selected from a drop-down menu.
     If `show_highlight=True` and `show_scatterplot=True`, additional
@@ -464,6 +470,8 @@ def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'],
         height of the heatmap
     width: Int, optional (default: `600`)
         width of the heatmap
+    save: Union[os.PathLike, Str, NoneType], optional (default: `None`)
+        path where to save the plot
     **scatter_kwargs:
         additional argument for `ipl.experimental.scatter`,
         only used when `show_scatter=True`
@@ -558,5 +566,10 @@ def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'],
         scatter = decimate(scatter, max_samples=int(adata.n_obs * keep_frac),
                            streams=[hv.streams.RangeXY(transient=True)], random_seed=seed)
 
-    return (hm + highlight + scatter).cols(1)
+    plot = (hm + highlight + scatter).cols(1)
+
+    if save is not None:
+        hv.rendered('bokeh').save(plot, save)
+
+    return plot
 
