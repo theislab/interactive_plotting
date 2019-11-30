@@ -541,6 +541,7 @@ def sample_density(adata, size, bs='umap', seed=None, components=[0, 1]):
 def get_xy_data(x, adata, adata_mraw, indices, use_original_limits=False, inc=0):
     xlim = None
     msg = f'Unable to decode key `{x}`.'
+
     if not isinstance(x, int):
         assert isinstance(x, str)
         if x in adata_mraw.var_names:
@@ -549,6 +550,12 @@ def get_xy_data(x, adata, adata_mraw, indices, use_original_limits=False, inc=0)
             x = adata_mraw.obs_vector(x)
 
             return x, xlabel, xlim
+        elif x in adata_mraw.obs_keys():
+            x, xlabel = adata_mraw.obs[x].values, x
+            if use_original_limits:
+                xlim = pad(*minmax(x))
+
+            return x[indices], xlabel, xlim
 
         x = x.lstrip('X_')
         comp, *ix = x.split(':')
@@ -556,10 +563,11 @@ def get_xy_data(x, adata, adata_mraw, indices, use_original_limits=False, inc=0)
 
         if f'X_{comp}' in adata.obsm:
             xlabel = f'{comp}_{ix}'
-            x = adata.obsm[f'X_{comp}'][indices, ix]
+            x = adata.obsm[f'X_{comp}'][:, ix]
             if use_original_limits:
-                xlim = pad(*minmax(adata.obsm[f'X_{comp}'][:, ix]))
-            return x, xlabel, xlim
+                xlim = pad(*minmax(x))
+
+            return x[indices], xlabel, xlim
 
         raise RuntimeError(msg)
 

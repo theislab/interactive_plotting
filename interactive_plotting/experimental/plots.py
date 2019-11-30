@@ -55,16 +55,18 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
         if of type `Int`, it corresponds to index in `adata.var_names`
         if of type `Str`, it can be either:
             - key in `adata.var_names`
+            - key in `adata.obs`
             - `'{basis_name}:{index}'` or `'{basis_name}'`, such as
-              `'pca:0'` or `'umap'` where `'{basis}'` is a basis from `adata.obsm` and
+              `'{basis}:{index}'` where `'{basis}'` is a basis from `adata.obsm` and
               `'{index}'` is the number of the component to choose
     y: Union[Int, Str]
         values on the y-axis
         if of type `Int`, it corresponds to index in `adata.var_names`
         if of type `Str`, it can be either:
             - key in `adata.var_names`
+            - key in `adata.obs`
             - `'{basis_name}:{index}'` or `'{basis_name}'`, such as
-              `'pca:0'` or `'umap'` where `'{basis}'` is a basis from `adata.obsm` and
+              `'{basis}:{index}'` where `'{basis}'` is a basis from `adata.obsm` and
               `'{index}'` is the number of the component to choose
     color: Union[Str, NoneType], optional (default: `None`)
         key in `adata.obs` to color in,
