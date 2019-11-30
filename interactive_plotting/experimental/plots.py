@@ -39,7 +39,7 @@ def minmax(component, perc=None, is_sorted=False):
 
 def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='datashade', use_raw=False,
              size=5, jitter=None, perc=None, cmap=None,
-             hover_keys=None, hover_dims=(10, 10),
+             hover_keys=None, hover_dims=(10, 10), kde=None,
              keep_frac=0.2, steps=40, seed=None, use_original_limits=False,
              legend_loc='top_right', show_legend=True, plot_height=600, plot_width=600, save=None):
     '''
@@ -97,6 +97,9 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
         if `None`, display nothing,
         if `[]`, display cell index,
         note that if `subsample='datashade'`, only cell index can be display
+    kde: Union[Float, NoneType], optional (default: `None`)
+        whether to show a density of points
+        if a `Float`, it corresponds to the bandwidth
     hover_dims: Tuple[Int, Int], optional (default: `(10, 10)`)
         number of rows and columns of hovering tiles,
         only used when `subsample='datashade'`
@@ -206,9 +209,10 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
                     xlabel=xlabel,  ylabel=ylabel,
                     title=color, hover=hover, jitter=jitter,
                     perc=perc, xlim=xlim, ylim=ylim,
-                    hover_width=hover_dims[1],hover_height=hover_dims[0],
+                    hover_width=hover_dims[1], hover_height=hover_dims[0], kde=kde,
                     subsample=subsample, steps=steps, keep_frac=keep_frac, seed=seed, legend_loc=legend_loc,
                     size=size, cmap=cmap, show_legend=show_legend, plot_height=plot_height, plot_width=plot_width)
+
     if save is not None:
         hv.renderer('bokeh').save(plot, save)
 
@@ -217,7 +221,8 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
 
 def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=40, keep_frac=0.2,
              seed=None, legend_loc='top_right', size=4, xlabel=None, ylabel=None, title=None,
-             use_raw=True, hover=None, hover_width=10, hover_height=10, jitter=None, perc=None, xlim=None, ylim=None,
+             use_raw=True, hover=None, hover_width=10, hover_height=10, kde=None,
+             jitter=None, perc=None, xlim=None, ylim=None,
              cmap=None, show_legend=True, plot_height=400, plot_width=400):
     assert keep_frac >= 0 and keep_frac <= 1, f'`keep_perc` must be in interval `[0, 1]`, got `{keep_frac}`.'
     # assert subsample in ALL_SUBSAMPLING_STRATEGIES, f'Invalid subsampling strategy `{subsample}`. Possible values are `{ALL_SUBSAMPLING_STRATEGIES}`.'
@@ -274,10 +279,13 @@ def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=
     if ylim is None:
         ylim = pad(*minmax(y))
 
-    scatter = (hv.Scatter(data, kdims=[('x', 'x' if xlabel is None else xlabel),
-                                       ('y', 'y' if ylabel is None else ylabel)], vdims=vdims)
+    kdims=[('x', 'x' if xlabel is None else xlabel),
+           ('y', 'y' if ylabel is None else ylabel)]
+    scatter = (hv.Scatter(data, kdims=kdims, vdims=vdims)
                .sort(vdims)
                .opts(size=size, xlim=xlim, ylim=ylim))
+    kde_plot= None if kde is None else \
+            hv.Bivariate(scatter).opts(bandwidth=kde, show_legend=False, line_width=2)
 
     if categorical:
         scatter = scatter.opts(cmap=cmap, color='z', show_legend=show_legend, legend_position=legend_loc)
@@ -318,7 +326,11 @@ def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=
     scatter = scatter.opts(title=title if title is not None else '',
                            frame_height=plot_height, frame_width=plot_width, xlim=xlim, ylim=ylim)
 
-    return scatter.opts(tools=[hovertool]) if hovertool is not None else scatter
+    scatter = scatter.opts(tools=[hovertool]) if hovertool is not None else scatter
+    if kde_plot is not None:
+        scatter *= kde_plot
+
+    return scatter
 
 
 def _heatmap(adata, genes, group, sort_genes=True, use_raw=False,
