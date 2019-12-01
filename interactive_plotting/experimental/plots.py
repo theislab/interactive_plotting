@@ -78,6 +78,8 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, layer=None, 
     indices: Union[np.array[Int], np.array[Bool], NoneType], optional (default: `None`)
         subset of cells to plot,
         if `None`, plot all cells
+    layer: Union[Str, NoneType], optinal (default: `None`)
+        key in `adata.layers`, used when `x` or `y` is a gene
     subsample: Str, optional (default: `'datashade'`)
         subsampling strategy for large data
         possible values are `None, 'none', 'datashade', 'decimate'`
