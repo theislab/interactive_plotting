@@ -37,7 +37,7 @@ def minmax(component, perc=None, is_sorted=False):
     return (np.nanmin(component), np.nanmax(component)) if not is_sorted else (component[0], component[-1])
 
 
-def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='datashade', use_raw=False,
+def scatter2(adata, x, y, color=None, order_key=None, indices=None, layer=None, subsample='datashade', use_raw=False,
              size=5, jitter=None, perc=None, cmap=None,
              hover_keys=None, hover_dims=(10, 10), kde=None, density=None, density_size=150,
              keep_frac=0.2, steps=40, seed=None, use_original_limits=False,
@@ -154,20 +154,19 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
     assert subsample in (None, 'none', 'datashade', 'decimate'), f'Invalid subsampling strategy `{subsample}`. ' \
             'Possible values are `None, \'none\', \'datashade\', \'decimate\'`.'
 
-    adata_mraw = get_mraw(adata, use_raw)
+    adata_mraw = get_mraw(adata, use_raw and layers is None)
     if adata_mraw is adata and use_raw:
         warnings.warn('Failed fetching the `.raw`. attribute of `adata`.')
 
     if indices is None:
         indices = np.arange(adata_mraw.n_obs)
-    adata_mraw = adata_mraw[indices, :]
 
     xlim, ylim = None, None
     if order_key is not None:
         assert order_key in adata.obs, f'`{order_key}` not found in `adata.obs`.'
         ixs = np.argsort(adata.obs[order_key][indices])
     else:
-        ixs = np.arange(adata_mraw.n_obs)
+        ixs = np.arange(len(indices))
 
     if x is None:
         if order_key is not None:
@@ -175,10 +174,10 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
         else:
             x, xlabel = ixs, 'index'
     else:
-        x, xlabel, xlim = get_xy_data(x, adata, adata_mraw, indices, use_original_limits)
+        x, xlabel, xlim = get_xy_data(x, adata, adata_mraw, layer, indices, use_original_limits)
         x = x[ixs]
 
-    y, ylabel, ylim = get_xy_data(y, adata, adata_mraw, indices, use_original_limits, inc=1)
+    y, ylabel, ylim = get_xy_data(y, adata, adata_mraw, layer, indices, use_original_limits, inc=1)
     y = y[ixs]
 
     # jitter
@@ -195,13 +194,13 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, subsample='d
     x = x.astype(np.float64)
     y = y.astype(np.float64)
 
+    adata_mraw = adata_mraw[indices, :]
     if color is not None:
         if color in adata.obs:
             condition = adata.obs[color][indices][ixs]
         else:
             if isinstance(color, int):
                 color = adata_mraw.var_names[color]
-            assert color in adata_mraw.var_names
             condition = adata_mraw.obs_vector(color)[ixs]
     else:
         condition = None

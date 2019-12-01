@@ -4,7 +4,9 @@ from functools import wraps
 from collections import Iterable
 from inspect import signature
 from sklearn.neighbors import NearestNeighbors
+from scipy.sparse import issparse
 
+import anndata
 import matplotlib.colors as colors
 import scanpy as sc
 import numpy as np
@@ -538,19 +540,40 @@ def sample_density(adata, size, bs='umap', seed=None, components=[0, 1]):
     return adata[ixs].copy(), ixs
 
 
-def get_xy_data(x, adata, adata_mraw, indices, use_original_limits=False, inc=0):
+def get_xy_data(x, adata, adata_mraw, layer, indices, use_original_limits=False, inc=0):
+
+
+    def extract(data, ix):
+        if isinstance(data, anndata.AnnData):
+            return data.obs_vector(ix)[indices]
+        if issparse(data):
+            return np.squeeze(data.getcol(ix).A)[indices]
+
+        # assume np.array
+        return data[indices, ix]
+
     xlim = None
     msg = f'Unable to decode key `{x}`.'
 
+    if layer is None:
+        take_from = adata_mraw
+    else:
+        # mraw is always adata in this case
+        assert layer in adata.layers, f'Layer `\'{layer}\'` not found in `adata.layers`.'
+        assert adata is adata_mraw, 'Sanity check failed.'
+        take_from = adata.layers[layer]
+
     if not isinstance(x, int):
         assert isinstance(x, str)
+        # can't use take from, since it can be an array
         if x in adata_mraw.var_names:
             ix = np.where(x == adata_mraw.var_names)[0][0]
             xlabel = adata_mraw.var_names[ix]
-            x = adata_mraw.obs_vector(x)
+            x = extract(take_from, ix)
 
             return x, xlabel, xlim
-        elif x in adata_mraw.obs_keys():
+
+        if x in adata_mraw.obs_keys():
             x, xlabel = adata_mraw.obs[x].values, x
             if use_original_limits:
                 xlim = pad(*minmax(x))
@@ -572,7 +595,7 @@ def get_xy_data(x, adata, adata_mraw, indices, use_original_limits=False, inc=0)
         raise RuntimeError(msg)
 
     xlabel = adata_mraw.var_names[x]
-    x = adata_mraw.obs_vector(x)
+    x = extract(take_from, x)
 
     return x, xlabel, xlim
 
@@ -582,3 +605,4 @@ def get_mraw(adata, use_raw):
         return adata
 
     return adata.raw if hasattr(adata, 'raw') and adata.raw is not None else adata
+
