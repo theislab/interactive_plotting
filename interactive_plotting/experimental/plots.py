@@ -287,12 +287,10 @@ def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=
     if jitter_y is not None:
         y += np.random.normal(0, jitter_y, size=y.shape)
 
-    data = pd.DataFrame({'x': x, 'y': y})
+    data = {'x': x, 'y': y}
     vdims = []
     if condition is not None:
-        data['z'] = np.array(condition)
-        if is_categorical:
-            data['z'] = data['z'].astype('category')
+        data['z'] = condition
         vdims.append('z')
 
     hovertool = None
@@ -302,6 +300,10 @@ def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=
             data[k] = dt
         hovertool = HoverTool(tooltips=[(key.capitalize(), f'@{key}')
                                         for key in (['index'] if subsample == 'datashade' else hover.keys())])
+    
+    data = pd.DataFrame(data)
+    if categorical:
+        data['z'] = data['z'].astype('category')
 
     if vdims == []:
         vdims = None
@@ -361,7 +363,7 @@ def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=
         scatter *= kde_plot 
 
     scatter = scatter.opts(height=plot_height, width=plot_width)
-    scatter = scatter.opts(tools=[hovertool]) if hovertool is not None else scatter
+    scatter = scatter.opts(hv.opts.Scatter(tools=[hovertool])) if hovertool is not None else scatter
 
     if xdist is not None and ydist is not None:
         scatter = (scatter << ydist.opts(width=density_size)) << xdist.opts(height=density_size)
