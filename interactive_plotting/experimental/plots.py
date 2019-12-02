@@ -317,9 +317,11 @@ def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=
 
     kdims=[('x', 'x' if xlabel is None else xlabel),
            ('y', 'y' if ylabel is None else ylabel)]
-    scatter = (hv.Scatter(data, kdims=kdims, vdims=vdims)
-               .sort(vdims)
-               .opts(size=size, xlim=xlim, ylim=ylim))
+
+    scatter = hv.Scatter(data, kdims=kdims, vdims=vdims)
+    if 'z' in vdims:
+        scatter = scatter.sort('z')
+    scatter = scatter.opts(size=size, xlim=xlim, ylim=ylim)
 
     kde_plot= None if kde is None else \
             hv.Bivariate(scatter).opts(bandwidth=kde, show_legend=False, line_width=2)
