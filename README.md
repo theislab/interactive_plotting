@@ -35,6 +35,7 @@ Here are some exemplary figures for each of the plotting functions.
 ipl.ex.scatter
 ```
 ![Scatterplot - general](resources/images/scatter_general2.png?raw=true "Scatterplot - general")
+
 ---
 
 ```python
@@ -63,12 +64,14 @@ ipl.ex.heatmap
 ```
 ![Heatmap](resources/images/heatmap.png?raw=true "Heatmap")
 
---
+---
 
 ```python
 ipl.dpt
 ```
 ![DPT plot](resources/images/dpt_plot.png?raw=true "DPT plot")
+
+---
 
 ```python
 ipl.graph
