@@ -32,26 +32,46 @@ output_notebook()
 ## Gallery
 Here are some exemplary figures for each of the plotting functions.
 ```python
-ipt.scatter
+ipl.ex.scatter
 ```
-![Scatterplot (cont)](resources/images/scatter_cont.png?raw=true "Scatterplot (continous)")
+![Scatterplot - general](resources/images/scatter_general2.png?raw=true "Scatterplot - general")
+---
+
+```python
+ipl.ex.scatter
+```
+![Scatterplot - general](resources/images/scatter_general1.png?raw=true "Scatterplot - general")
 
 ---
 
 ```python
-ipt.scatterc
+ipl.scatter
 ```
-![Scatterplot (cat)](resources/images/scatter_cat.png?raw=true "Scatterplot (categorical)")
+![Scatterplot (emb. cont.)](resources/images/scatter_cont.png?raw=true "Scatterplot - embedding (continous)")
 
 ---
 
 ```python
-ipt.dpt
+ipl.scatterc
+```
+![Scatterplot (emb. cat.)](resources/images/scatter_cat.png?raw=true "Scatterplot - embedding (categorical)")
+
+---
+
+```python
+ipl.ex.heatmap
+```
+![Heatmap](resources/images/heatmap.png?raw=true "Heatmap")
+
+--
+
+```python
+ipl.dpt
 ```
 ![DPT plot](resources/images/dpt_plot.png?raw=true "DPT plot")
 
 ```python
-ipt.graph
+ipl.graph
 ```
 ![Graph plot](resources/images/graph_plot.png?raw=true "Graph plot")
 
