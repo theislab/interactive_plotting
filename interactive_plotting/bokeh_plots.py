@@ -849,7 +849,7 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
                                        show_cont_annot=show_cont_annot, legend_loc=legend_loc, genes=extra_genes,
                                        use_raw=use_raw, plot_width=plot_width, plot_height=plot_height))
 
-    plot = columns(*figs)
+    plot = column(*figs)
 
     if save is not None:
         save = save if str(save).endswith('.html') else str(save) + '.html'

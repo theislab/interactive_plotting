@@ -156,7 +156,7 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, layer=None, 
     assert subsample in (None, 'none', 'datashade', 'decimate'), f'Invalid subsampling strategy `{subsample}`. ' \
             'Possible values are `None, \'none\', \'datashade\', \'decimate\'`.'
 
-    adata_mraw = get_mraw(adata, use_raw and layers is None)
+    adata_mraw = get_mraw(adata, use_raw and layer is None)
     if adata_mraw is adata and use_raw:
         warnings.warn('Failed fetching the `.raw`. attribute of `adata`.')
 
@@ -177,10 +177,8 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, layer=None, 
             x, xlabel = ixs, 'index'
     else:
         x, xlabel, xlim = get_xy_data(x, adata, adata_mraw, layer, indices, use_original_limits)
-        x = x[ixs]
 
     y, ylabel, ylim = get_xy_data(y, adata, adata_mraw, layer, indices, use_original_limits, inc=1)
-    y = y[ixs]
 
     # jitter
     if jitter is not None:
@@ -237,6 +235,7 @@ def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=
     _sentinel = object()
 
     def create_density_plots(df, density, kdims, cmap):
+        cm = {}
         if density == 'all':
             dfs = {_sentinel: df}
         elif density == 'group':
@@ -248,10 +247,11 @@ def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=
                 dfs = {_sentinel: df}
             else:
                 dfs = {k:v for k, v in df.groupby('z')}
+                cm = cmap
         else:
-            raise ValueError(f'Invalid `density` type: \'`{density}`\'.')
+            raise ValueError(f'Invalid `density` type: \'`{density}`\'. Possible values are `\'all\'`, `\'group\'`.')
         # assumes x, y order in kdims
-        return [hv.Overlay([hv.Distribution(df, kdims=dim).opts(color=cmap.get(k, 'black'),
+        return [hv.Overlay([hv.Distribution(df, kdims=dim).opts(color=cm.get(k, 'black'),
                                                                 framewise=True)
                             for k, df in dfs.items()])
                 for dim in kdims]
@@ -544,6 +544,9 @@ def heatmap(adata, genes, groups=None, compare='genes', agg_fns=['mean', 'var'],
 
     def _scatter(group, which, gwise, x, y):
         indices = adata.obs[group] == y if gwise else np.isin(adata.obs[group], highlight[group].data['y'])
+        # this is necessary
+        indices = np.where(indices)[0]
+
         if is_ordered:
             scatter_kwargs['order_key'] = which
             x, y = None, x

@@ -542,9 +542,9 @@ def sample_density(adata, size, bs='umap', seed=None, components=[0, 1]):
 
 def get_xy_data(x, adata, adata_mraw, layer, indices, use_original_limits=False, inc=0):
 
-
     def extract(data, ix):
-        if isinstance(data, anndata.AnnData):
+        if isinstance(data, anndata.core.anndata.Raw) or \
+            isinstance(data, anndata.AnnData):
             return data.obs_vector(ix)[indices]
         if issparse(data):
             return np.squeeze(data.getcol(ix).A)[indices]
