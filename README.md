@@ -62,7 +62,7 @@ ipl.scatterc
 ```python
 ipl.ex.heatmap
 ```
-![Heatmap](resources/images/heatmap.png?raw=true "Heatmap")
+![Heatmap](https://raw.githubusercontent.com/theislab/interactive_plotting/experimental/resources/images/heatmap.png "Heatmap")
 
 ---
 
