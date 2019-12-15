@@ -2,16 +2,13 @@
 
 from ..utils import *
 
-from pandas.api.types import is_categorical_dtype, is_categorical, \
-                             is_numeric_dtype, is_bool_dtype, \
-                             is_datetime64_any_dtype, is_string_dtype, \
-                             infer_dtype
+from pandas.api.types import is_categorical
 from collections import OrderedDict as odict
 from datashader.colors import *
 from bokeh.palettes import Viridis256
 from holoviews.streams import Selection1D
 from holoviews.operation import decimate
-from holoviews.operation.datashader import datashade, dynspread, rasterize, spread
+from holoviews.operation.datashader import datashade, dynspread, rasterize
 from bokeh.models import HoverTool
 
 import numpy as np
@@ -37,7 +34,7 @@ def minmax(component, perc=None, is_sorted=False):
     return (np.nanmin(component), np.nanmax(component)) if not is_sorted else (component[0], component[-1])
 
 
-def scatter2(adata, x, y, color=None, order_key=None, indices=None, layer=None, subsample='datashade', use_raw=False,
+def scatter2(adata, x, y, color, order_key=None, indices=None, layer=None, subsample='datashade', use_raw=False,
              size=5, jitter=None, perc=None, cmap=None,
              hover_keys=None, hover_dims=(10, 10), kde=None, density=None, density_size=150,
              keep_frac=0.2, steps=40, seed=None, use_original_limits=False,
@@ -49,7 +46,7 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, layer=None, 
     -------
     adata: anndata.AnnData
         adata object
-    x: Union[Int, Str, None]
+    x: Union[Int, Str]
         values on the x-axis
         if of type `NoneType`, x-axis will be based on `order_key`
         if of type `Int`, it corresponds to index in `adata.var_names`
@@ -69,8 +66,7 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, layer=None, 
               `'{basis}:{index}'` where `'{basis}'` is a basis from `adata.obsm` and
               `'{index}'` is the number of the component to choose
     color: Union[Str, NoneType], optional (default: `None`)
-        key in `adata.obs` to color in,
-        if `None`, all cells will be black
+        key in `adata.obs` to color in
     order_key: Union[Str, NoneType], optional (default: `None`)
         key in `adata.obs` which defines cell-ordering,
         such as `'dpt_pseudotime'`, cells will
@@ -226,7 +222,7 @@ def scatter2(adata, x, y, color=None, order_key=None, indices=None, layer=None, 
     return plot
 
 
-def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=40, keep_frac=0.2,
+def _scatter(adata, x, y, condition, by=None, subsample='datashade', steps=40, keep_frac=0.2,
              seed=None, legend_loc='top_right', size=4, xlabel=None, ylabel=None, title=None,
              use_raw=True, hover=None, hover_width=10, hover_height=10, kde=None,
              density=None, density_size=150, jitter=None, perc=None, xlim=None, ylim=None,
@@ -289,11 +285,8 @@ def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=
     if jitter_y is not None:
         y += np.random.normal(0, jitter_y, size=y.shape)
 
-    data = {'x': x, 'y': y}
-    vdims = []
-    if condition is not None:
-        data['z'] = condition
-        vdims.append('z')
+    data = {'x': x, 'y': y, 'z': condition}
+    vdims = ['z']
 
     hovertool = None
     if hover is not None:
@@ -307,7 +300,7 @@ def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=
     if categorical:
         data['z'] = data['z'].astype('category')
 
-    if vdims == []:
+    if not vdims:
         vdims = None
 
     if xlim is None:
@@ -318,9 +311,7 @@ def _scatter(adata, x, y, condition=None, by=None, subsample='datashade', steps=
     kdims=[('x', 'x' if xlabel is None else xlabel),
            ('y', 'y' if ylabel is None else ylabel)]
 
-    scatter = hv.Scatter(data, kdims=kdims, vdims=vdims)
-    if 'z' in vdims:
-        scatter = scatter.sort('z')
+    scatter = hv.Scatter(data, kdims=kdims, vdims=vdims).sort('z')
     scatter = scatter.opts(size=size, xlim=xlim, ylim=ylim)
 
     kde_plot= None if kde is None else \

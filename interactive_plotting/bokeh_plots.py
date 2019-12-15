@@ -329,7 +329,7 @@ def _create_gt_fig(adatas, dataframe, color_key, title, color_mapper, show_cont_
                                      color={'field': color_key, 'transform': color_mapper if is_categorical else mappers[color_key]['transform']},
                                      fill_color={'field': color_key, 'transform': color_mapper if is_categorical else mappers[color_key]['transform']},
                                      line_color={'field': color_key, 'transform': color_mapper if is_categorical else mappers[color_key]['transform']},
-                                     marker=marker, size=10, legend=path, muted_alpha=0))
+                                     marker=marker, size=10, legend_label=path, muted_alpha=0))
 
         fig.xaxis.axis_label = 'dpt'
         fig.yaxis.axis_label = 'expression'
@@ -343,7 +343,7 @@ def _create_gt_fig(adatas, dataframe, color_key, title, color_mapper, show_cont_
         if ds.get('x_test') is not None:
             if ds.get('x_mean') is not None:
                 source = ColumnDataSource(ds)
-                fig.line('x_test', 'x_mean', source=source, muted_alpha=0, legend=path)
+                fig.line('x_test', 'x_mean', source=source, muted_alpha=0, legend_label=path)
                 if all(map(lambda val: val is not None, ds.get('x_cov', [None]))):
                     x_mean = ds['x_mean']
                     x_cov = ds['x_cov']
@@ -351,7 +351,7 @@ def _create_gt_fig(adatas, dataframe, color_key, title, color_mapper, show_cont_
                     # black magic, known only to the most illustrious of wizards
                     band_y = np.append((x_mean - np.sqrt(np.diag(x_cov)))[::-1], (x_mean + np.sqrt(np.diag(x_cov))))
                     fig.patch(band_x, band_y, alpha=0.1, line_color='black', fill_color='black',
-                              legend=path, line_dash='dotdash', muted_alpha=0)
+                              legend_label=path, line_dash='dotdash', muted_alpha=0)
 
             if ds.get('x_grad') is not None:
                 fig.line('x_test', 'x_grad', source=source, muted_alpha=0)
@@ -473,7 +473,7 @@ def interactive_hist(adata, keys=['n_counts', 'n_genes'],
                     if groups is not None else 'all'
             p = fig.quad(source=source, top='hist', bottom=0,
                          left='l_edges', right='r_edges',
-                         fill_color=palette[j], legend=legend if legend_loc is not None else None,
+                         fill_color=palette[j], legend_label=legend if legend_loc is not None else None,
                          muted_alpha=0,
                          line_color="#555555", fill_alpha=fill_alpha)
 
@@ -596,7 +596,7 @@ def thresholding_hist(adata, key, categories, basis=['umap'], components=[1, 2],
     color = dict(field='category', transform=CategoricalColorMapper(palette=palette, factors=list(categories.keys())))
     hist_fig.quad(source=source, top='hist', bottom=0,
                   left='l_edges', right='r_edges', color=color,
-                  line_color="#555555", legend='category')
+                  line_color="#555555", legend_group='category')
     if legend_loc is not None:
         hist_fig.legend.location = legend_loc
 
@@ -608,7 +608,7 @@ def thresholding_hist(adata, key, categories, basis=['umap'], components=[1, 2],
         fig.yaxis.axis_label = f'{bs}_{comp[1]}'
         _set_plot_wh(fig, plot_width, plot_height)
 
-        fig.scatter(f'x_{bs}', f'y_{bs}', source=orig, size=10, color=color, legend='category')
+        fig.scatter(f'x_{bs}', f'y_{bs}', source=orig, size=10, color=color, legend_group='category')
         if legend_loc is not None:
             fig.legend.location = legend_loc
 
@@ -1143,9 +1143,13 @@ def link_plot(adata, key, genes=None, basis=['umap', 'pca'], components=[1, 2],
         fig = figure(tools='pan, reset, save, ' + ('zoom_in, zoom_out' if i == 0 else 'wheel_zoom'),
                      title=bs, plot_width=400, plot_height=400)
         _set_plot_wh(fig, plot_width, plot_height)
+
+        kwargs = {}
+        if show_legend and legend_loc is not None:
+            kwargs['legend_group'] = 'hl_key' if highlight_only is not None else key
+
         scatter = fig.scatter(f'x{i}', f'y{i}', source=ds, line_color=mapper, color=mapper,
-                              legend=('hl_key' if highlight_only is not None else key) if (show_legend and legend_loc is not None) else None,
-                              hover_color='black', size=8, line_width=8, line_alpha=0)
+                              hover_color='black', size=8, line_width=8, line_alpha=0, **kwargs)
         if show_legend and legend_loc is not None:
             fig.legend.location = legend_loc
 
@@ -1154,8 +1158,9 @@ def link_plot(adata, key, genes=None, basis=['umap', 'pca'], components=[1, 2],
     
         # static plots
         fig = figure(title=bs, plot_width=400, plot_height=400)
-        fig.scatter(f'x{i}', f'y{i}', source=ds, size=8, legend=key if legend_loc is not None else None,
-                    color={'field': key, 'transform': static_fig_mapper})
+
+        fig.scatter(f'x{i}', f'y{i}', source=ds, size=8,
+                    color={'field': key, 'transform': static_fig_mapper}, **kwargs)
 
         if legend_loc is not None:
             fig.legend.location = legend_loc
@@ -1166,7 +1171,7 @@ def link_plot(adata, key, genes=None, basis=['umap', 'pca'], components=[1, 2],
 
     end = dmat[~np.isinf(dmat)].max().max() if distance != 'dpt' else 1.0
     slider = Slider(start=0, end=end, value=end / 2, step=end / 1000,
-            title='Distance ' +  '(dpt)' if distance == 'dpt' else f'({distance}-norm)')
+                    title='Distance ' + '(dpt)' if distance == 'dpt' else f'({distance}-norm)')
     col_ds = ColumnDataSource(dict(value=[start_ix]))
     update_color_code = f'''
         source.data['hl_color'] = source.data[first].map(

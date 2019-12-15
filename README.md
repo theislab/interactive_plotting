@@ -2,7 +2,7 @@
 
 
 ## About
-This repository contains 10 different interactive plotting functions, which may be useful during exploratory analysis.
+This repository contains 11 different interactive plotting functions, which may be useful during exploratory analysis.
 
 Almost every function provides some information when hovering over the plot and some parts of the plots can be hidden by clicking the legend.
 
@@ -35,6 +35,13 @@ Here are some exemplary figures for each of the plotting functions.
 ipl.ex.scatter
 ```
 ![Scatterplot - general](resources/images/scatter_general2.png?raw=true "Scatterplot - general")
+
+---
+
+```python
+ipl.ex.scatter3d
+```
+![Scatterplot - 3D](resources/images/scatter3d.png?raw=true "Scatterplot - 3D")
 
 ---
 

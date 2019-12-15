@@ -1295,7 +1295,9 @@ def graph(adata, key, basis=None, components=[1, 2], obs_keys=[], color_key=None
 
     if basis is None:
         basis = np.ravel(sorted(filter(len, map(BS_PAT.findall, adata.obsm.keys()))))
-    elif not isinstance(basis, np.ndarray):
+    elif basis is str:
+        basis = [basis]
+    if not isinstance(basis, np.ndarray):
         basis = np.array(basis)
 
     if not isinstance(components, np.ndarray):
