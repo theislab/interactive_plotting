@@ -67,9 +67,14 @@ def _to_hex_colors(values, cmap, perc=None):
 
 
 def _mpl_to_hex_palette(cmap):
-    rgb_cmap = (255 * cmap(range(256))).astype('int')
+    if isinstance(cmap, matplotlib.colors.ListedColormap):
+        rgb_cmap = (255 * cmap(range(256))).astype('int')
+        return [RGB(*tuple(rgb)).to_hex() for rgb in rgb_cmap]
 
-    return [RGB(*tuple(rgb)).to_hex() for rgb in rgb_cmap]
+    assert all(map(lambda c: matplotlib.colors.is_color_like(c), cmap)), 'Not all colors are color-like.'
+
+    return [matplotlib.colors.to_hex(c) for c in cmap]
+
 
 
 def scatter3d(adata: AnnData,
@@ -161,8 +166,12 @@ def scatter3d(adata: AnnData,
     fig = figure(tools=[], outline_line_width=0, toolbar_location='left', disabled=True)
 
     if key in adata.obs and is_categorical_dtype(adata.obs[key]):
-        hex_palette = _mpl_to_hex_palette(cm.tab20b if cmap is None else cmap)
-        mapper = dict(zip(adata.obs[key].cat.categories, adata.uns.get(f'{key}_colors', hex_palette)))
+        cmap = adata.uns.get(f'{key}_colors', cmap)
+        cmap = cm.tab20b if cmap is None else cmap
+
+        hex_palette = _mpl_to_hex_palette(cmap)
+
+        mapper = dict(zip(adata.obs[key].cat.categories, hex_palette))
         colors = [str(mapper[c]) for c in adata.obs[key]]
 
         n_cls = len(adata.obs[key].cat.categories)
@@ -175,9 +184,10 @@ def scatter3d(adata: AnnData,
         ])
     else:
         vals = adata.obs_vector(key) if key in adata.var_names else adata.obs[key]
-        colors, minn, maxx = _to_hex_colors(vals, cmap, perc=perc)
 
-        hex_palette = _mpl_to_hex_palette(cm.viridis if cmap is None else cmap)
+        cmap = cm.viridis if cmap is None else cmap
+        colors, minn, maxx = _to_hex_colors(vals, cmap, perc=perc)
+        hex_palette = _mpl_to_hex_palette(cmap)
 
         _ = fig.circle(0, 0, visible=False, radius=0)
 
