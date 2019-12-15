@@ -10,17 +10,21 @@ from bokeh.models import (
     LinearColorMapper,
     FixedTicker
 )
-from bokeh.io import show
+from bokeh.io import save
+from bokeh.resources import CDN
 from bokeh.layouts import row
 from bokeh.plotting import figure
 from bokeh.colors import RGB
 from pandas.api.types import is_categorical_dtype
 from anndata import AnnData
 from typing import Union, Optional, Sequence, Tuple
+from time import sleep
 
 import matplotlib
 import matplotlib.cm as cm
 import numpy as np
+import webbrowser
+import tempfile
 
 
 _DEFAULT = {
@@ -64,6 +68,7 @@ def _to_hex_colors(values, cmap, perc=None):
 
 def _mpl_to_hex_palette(cmap):
     rgb_cmap = (255 * cmap(range(256))).astype('int')
+
     return [RGB(*tuple(rgb)).to_hex() for rgb in rgb_cmap]
 
 
@@ -100,7 +105,7 @@ def scatter3d(adata: AnnData,
     perc
         Percentile by which to clip colors.
     n_ticks
-        Number of ticks for colorbaar if `key` is not categorical.
+        Number of ticks for colorbar if `key` is not categorical.
     vertical_ratio
         Ratio by which to squish the z-axis.
     show_axes
@@ -110,11 +115,11 @@ def scatter3d(adata: AnnData,
     perspective
         Whether to keep the perspective.
     tooltips
-        Keys in `adata.obs` to visualize when hovering.
+        Keys in `adata.obs` to visualize when hovering over cells.
     cmap
         Colormap to use.
     dot_size_ratio
-        Ratio of dots with respect to the plot size.
+        Ratio of the dots with respect to the plot size.
     plot_height
         Height of the plot in pixels. If `None`, try getting the screen height.
     plot_width
@@ -123,7 +128,7 @@ def scatter3d(adata: AnnData,
     Returns
     -------
     None
-        Nothing, just plots.
+        Nothing, just plots in a new tab.
     """
 
     def _wrap_as_div(row, sep=':'):
@@ -225,11 +230,14 @@ def scatter3d(adata: AnnData,
     fig.add_layout(to_add, 'left')
 
     # dirty little trick, makes plot disappear
-    # ideally, one would modify the DOM in the .ts file
-    # but I'm just lazy
+    # ideally, one would modify the DOM in the .ts file but I'm just lazy
     fig.xgrid.visible = False
     fig.ygrid.visible = False
     fig.xaxis.visible = False
     fig.yaxis.visible = False
 
-    show(row(surface, fig))
+    with tempfile.NamedTemporaryFile(suffix='.html') as fout:
+        path = save(row(surface, fig), fout.name, resources=CDN, title=f'Scatter3D - {key}')
+        fout.flush()
+        webbrowser.open_new_tab(path)
+        sleep(2)  # better safe than sorry
