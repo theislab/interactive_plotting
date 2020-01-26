@@ -19,6 +19,7 @@ from pandas.api.types import is_categorical_dtype
 from anndata import AnnData
 from typing import Union, Optional, Sequence, Tuple
 from time import sleep
+from collections import defaultdict
 
 import matplotlib
 import matplotlib.cm as cm
@@ -91,6 +92,8 @@ def scatter3d(adata: AnnData,
               tooltips: Optional[Sequence[str]] = [],
               cmap: Optional[matplotlib.colors.ListedColormap] = None,
               dot_size_ratio: float = 0.01,
+              show_legend: bool = True,
+              show_cbar: bool = True,
               plot_height: Optional[int] = 1400,
               plot_width: Optional[int] = 1400):
     """
@@ -125,6 +128,10 @@ def scatter3d(adata: AnnData,
         Colormap to use.
     dot_size_ratio
         Ratio of the dots with respect to the plot size.
+    show_legend
+        Whether to show legend when annotation is categorical.
+    show_cbar
+        Whether to show colorbar when annotation is continuous.
     plot_height
         Height of the plot in pixels. If `None`, try getting the screen height.
     plot_width
@@ -164,24 +171,26 @@ def scatter3d(adata: AnnData,
                 z=adata.obsm[basis_key][:, components[2]])
 
     fig = figure(tools=[], outline_line_width=0, toolbar_location='left', disabled=True)
+    to_add = None
 
     if key in adata.obs and is_categorical_dtype(adata.obs[key]):
-        cmap = adata.uns.get(f'{key}_colors', cmap)
-        cmap = cm.tab20b if cmap is None else cmap
+        if cmap is None:
+            cmap = adata.uns.get(f'{key}_colors', cm.tab20b)
 
         hex_palette = _mpl_to_hex_palette(cmap)
 
-        mapper = dict(zip(adata.obs[key].cat.categories, hex_palette))
+        mapper = defaultdict(lambda: '#AAAAAA', zip(adata.obs[key].cat.categories, hex_palette))
         colors = [str(mapper[c]) for c in adata.obs[key]]
 
         n_cls = len(adata.obs[key].cat.categories)
         _ = fig.circle([0] * n_cls, [0] * n_cls,
                        color=list(mapper.values()),
                        visible=False, radius=0)
-        to_add = Legend(items=[
-            LegendItem(label=c, index=i, renderers=[_])
-            for i, c in enumerate(mapper.keys())
-        ])
+        if show_legend:
+            to_add = Legend(items=[
+                LegendItem(label=str(c), index=i, renderers=[_])
+                for i, c in enumerate(mapper.keys())
+            ])
     else:
         vals = adata.obs_vector(key) if key in adata.var_names else adata.obs[key]
 
@@ -192,8 +201,9 @@ def scatter3d(adata: AnnData,
         _ = fig.circle(0, 0, visible=False, radius=0)
 
         color_mapper = LinearColorMapper(palette=hex_palette, low=minn, high=maxx)
-        to_add = ColorBar(color_mapper=color_mapper, ticker=FixedTicker(ticks=np.linspace(minn, maxx, n_ticks)),
-                          label_standoff=12, border_line_color=None, location=(0, 0))
+        if show_cbar:
+            to_add = ColorBar(color_mapper=color_mapper, ticker=FixedTicker(ticks=np.linspace(minn, maxx, n_ticks)),
+                              label_standoff=12, border_line_color=None, location=(0, 0))
 
     data['color'] = colors
     if tooltips is None:
@@ -236,8 +246,8 @@ def scatter3d(adata: AnnData,
                                                             xCenter='50%',
                                                             yCenter='50%',
                                                             showGrid=show_axes)})
-
-    fig.add_layout(to_add, 'left')
+    if to_add is not None:
+        fig.add_layout(to_add, 'left')
 
     # dirty little trick, makes plot disappear
     # ideally, one would modify the DOM in the .ts file but I'm just lazy

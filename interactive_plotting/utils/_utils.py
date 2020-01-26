@@ -512,7 +512,7 @@ def sample_unif(adata, steps, bs='umap', components=[0, 1]):
     ixs = ixs[dist < min_dist]
     ixs = np.unique(ixs)
 
-    return adata[ixs].copy(), ixs
+    return adata[ixs, :].copy(), ixs
 
 
 def sample_density(adata, size, bs='umap', seed=None, components=[0, 1]):
