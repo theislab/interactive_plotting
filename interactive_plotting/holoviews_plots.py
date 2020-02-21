@@ -2,7 +2,7 @@
 
 from .utils import *
 
-from collections import Iterable, ChainMap, defaultdict, OrderedDict as odict
+from collections import OrderedDict as odict
 
 from pandas.api.types import is_categorical_dtype, is_string_dtype, infer_dtype
 from scipy.sparse import issparse
@@ -33,7 +33,7 @@ except AssertionError:
 #TODO: DRY
 
 @wrap_as_panel
-def scatter(adata, genes=None, basis=None, components=[1, 2], obs_keys=None,
+def scatter(adata, genes=None, basis=None, components=(1, 2), obs_keys=None,
             obsm_keys=None, use_raw=False, subsample='datashade', steps=40, keep_frac=None, lazy_loading=True,
             default_obsm_ixs=[0], sort=True, skip=True, seed=None, cols=None, size=4,
             perc=None, show_perc=True, cmap=None, plot_height=400, plot_width=400, save=None):

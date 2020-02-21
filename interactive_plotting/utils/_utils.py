@@ -479,20 +479,20 @@ def get_all_obsm_keys(adata, ixs):
     return list(itertools.chain.from_iterable((f'{key}{OBSM_SEP}{ix}'
                                           for key in adata.obsm.keys() if isinstance(adata.obsm[key], np.ndarray) and adata.obsm[key].ndim == 2 and adata.obsm[key].shape[-1] > ix)
                                           for ix in ixs))
-
 # based on:
 # https://github.com/velocyto-team/velocyto-notebooks/blob/master/python/DentateGyrus.ipynb
-def sample_unif(adata, steps, bs='umap', components=[0, 1]):
+def sample_unif(adata, steps, bs='umap', components=(0, 1)):
     if not isinstance(steps, (tuple, list)):
-        steps = (steps, steps)
+        steps = [steps] * len(components)
 
     assert len(components)
     assert min(components) >= 0
 
     embedding = adata.obsm[f'X_{bs}'][:, components]
+    n_dim = len(components)
 
     grs = []
-    for i in range(embedding.shape[1]):
+    for i in range(n_dim):
         m, M = np.min(embedding[:, i]), np.max(embedding[:, i])
         m = m - 0.025 * np.abs(M - m)
         M = M + 0.025 * np.abs(M - m)
@@ -506,8 +506,8 @@ def sample_unif(adata, steps, bs='umap', components=[0, 1]):
     nn.fit(embedding)
     dist, ixs = nn.kneighbors(gridpoints_coordinates, 1)
 
-    min_dist = np.sqrt((meshes_tuple[0][0, 0] - meshes_tuple[0][0, 1]) ** 2 +
-                             (meshes_tuple[1][0, 0] - meshes_tuple[1][1, 0]) ** 2) / 2
+    diag_step_dist = np.linalg.norm([grs[dim_i][1] - grs[dim_i][0] for dim_i in range(n_dim)])
+    min_dist = diag_step_dist / 2
 
     ixs = ixs[dist < min_dist]
     ixs = np.unique(ixs)

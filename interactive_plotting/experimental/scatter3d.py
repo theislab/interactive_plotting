@@ -81,14 +81,14 @@ def _mpl_to_hex_palette(cmap):
 def scatter3d(adata: AnnData,
               key: str,
               basis: str = 'umap',
-              components: Sequence[int] = [0, 1, 2],
+              components: Sequence[int] = (0, 1, 2),
               steps: Union[Tuple[int, int], int] = 100,
               perc: Optional[Tuple[int, int]] = None,
               n_ticks: int = 10,
               vertical_ratio: float = 1,
               show_axes: bool = False,
               keep_aspect_ratio: bool = True,
-              perspective:bool = True,
+              perspective: bool = True,
               tooltips: Optional[Sequence[str]] = [],
               cmap: Optional[matplotlib.colors.ListedColormap] = None,
               dot_size_ratio: float = 0.01,
@@ -164,7 +164,7 @@ def scatter3d(adata: AnnData,
     assert key in adata.obs or key in adata.var_names, f'Key `{key}` not found in `adata.obs` or `adata.var_names`.'
 
     if steps is not None:
-        adata, _ = sample_unif(adata, steps, bs=basis, components=components[:2])
+        adata, _ = sample_unif(adata, steps, bs=basis, components=components)
 
     data = dict(x=adata.obsm[basis_key][:, components[0]],
                 y=adata.obsm[basis_key][:, components[1]],
