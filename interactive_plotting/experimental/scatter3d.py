@@ -163,7 +163,9 @@ def scatter3d(adata: AnnData,
         f'Component `{max(components)}` is >= than number of components `{adata.obsm[basis_key].shape[-1]}`.'
     assert key in adata.obs or key in adata.var_names, f'Key `{key}` not found in `adata.obs` or `adata.var_names`.'
 
+    colors = adata.uns.get(f'{key}_colors', None)
     if steps is not None:
+        # this somehow destroys the colors
         adata, _ = sample_unif(adata, steps, bs=basis, components=components)
 
     data = dict(x=adata.obsm[basis_key][:, components[0]],
@@ -175,7 +177,7 @@ def scatter3d(adata: AnnData,
 
     if key in adata.obs and is_categorical_dtype(adata.obs[key]):
         if cmap is None:
-            cmap = adata.uns.get(f'{key}_colors', cm.tab20b)
+            cmap = colors or cm.tab20b
 
         hex_palette = _mpl_to_hex_palette(cmap)
 
