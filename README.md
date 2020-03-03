@@ -9,10 +9,9 @@ Almost every function provides some information when hovering over the plot and 
 ## Installation
 To install this package, do the following:
 ```bash
-git clone https://github.com/theislab/interactive_plotting  
-cd interactive_plotting  
-pip install -e .
+pip install git+https://github.com/theislab/interactive_plotting  
 ```
+For 3D scatterplot, `node.js >= v6.10.0` is required. Go to node's [website](https://nodejs.org/en/) for instructions on how to install it.
 
 ## Getting Started
 We recommend checking out the [tutorial notebook](./notebooks/interactive_plotting_tutorial.ipynb).
