@@ -792,7 +792,7 @@ def gene_trend(adata, paths, genes=None, mode='gp', exp_key='X',
             gene_exp = ad[:, gene].layers[exp_key] if exp_key != 'X' else (ad.raw if use_raw else ad)[:, gene].X
 
             # exclude dropouts
-            ix = (gene_exp > 0)
+            ix = (gene_exp > 0).squeeze()
             indexer = slice(None) if show_zero_counts else ix
             # just use for sanity check with asserts
             rev_indexer = ix if show_zero_counts else slice(None)

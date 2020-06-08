@@ -1,3 +1,2 @@
-from .plots import heatmap
-from .plots import scatter2 as scatter
-from .scatter3d import scatter3d
+from interactive_plotting.experimental.plots import heatmap, scatter2 as scatter
+from interactive_plotting.experimental.scatter3d import scatter3d

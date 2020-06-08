@@ -1255,8 +1255,11 @@ def graph(adata, key, basis=None, components=[1, 2], obs_keys=[], color_key=None
 
     paga_pos = None
     is_paga = False
-    if which is None and key in adata.uns.keys():
-        data = adata.uns[key]
+    if which is None:
+        if key in adata.uns.keys():
+            data = adata.uns[key]
+        elif hasattr(adata, 'obsp') and key in adata.obsp:
+            data = adata.obsp[key]
     elif which == 'n' and key in adata.uns['neighbors'].keys():
         data = adata.uns['neighbors'][key]
     elif which == 'p' and key in adata.uns['paga'].keys():
@@ -1338,12 +1341,7 @@ def graph(adata, key, basis=None, components=[1, 2], obs_keys=[], color_key=None
             else:
                 color_vals = adata_ss.obs[color_key].values
         else:
-            print(data.shape)
             color_vals = np.array(color_key_reduction(data, axis=int(color_key == 'outgoing'))).flatten()
-
-        if not is_categorical:
-            color_key_map = linear_cmap(field_name=color_key, palette=node_cmap,
-                                       low=np.min(color_vals), high=np.max(color_vals))
 
     if not is_categorical:
         legend_loc = None
@@ -1403,7 +1401,5 @@ def graph(adata, key, basis=None, components=[1, 2], obs_keys=[], color_key=None
 
     if legend_loc is not None and color_key is not None:
         res = res.opts(legend_position=legend_loc)
-
-    labels = hv.Labels(nodes, ['x', 'y'], color_key)
 
     return res.opts(hv.opts.Graph(xaxis=None, yaxis=None))
