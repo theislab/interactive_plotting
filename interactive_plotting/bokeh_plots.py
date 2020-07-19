@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from sklearn.neighbors import NearestNeighbors
 from sklearn.gaussian_process.kernels import *
 from sklearn import neighbors
 from scipy.sparse import issparse
@@ -17,12 +16,11 @@ import pandas as pd
 import scanpy as sc
 
 import matplotlib.cm as cm
-import matplotlib.colors as colors
 import matplotlib
 import bokeh
 
 
-from .utils import sample_unif, sample_density, to_hex_palette
+from interactive_plotting.utils import sample_unif, sample_density, to_hex_palette
 from bokeh.plotting import figure, show, save as bokeh_save
 from bokeh.models import ColumnDataSource, Slider, HoverTool, ColorBar, \
         Patches, Legend, CustomJS, TextInput, LabelSet, Select 
@@ -33,7 +31,6 @@ from bokeh.transform import linear_cmap, factor_mark, factor_cmap
 from bokeh.core.enums import MarkerType
 from bokeh.palettes import Set1, Set2, Set3, inferno, viridis
 from bokeh.models.widgets.buttons import Button
-from bokeh.io import output_file, save
 
 _bokeh_version = tuple(map(int, bokeh.__version__.split('.')))
 
