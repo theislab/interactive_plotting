@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from ..utils import *
+from interactive_plotting.utils._utils import *
 
 from pandas.api.types import is_categorical
 from collections import OrderedDict as odict

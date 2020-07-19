@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from .utils import *
+from interactive_plotting.utils._utils import *
 
 from collections import OrderedDict as odict
 
@@ -12,7 +12,6 @@ from datashader.colors import Sets1to3
 from pandas.core.indexes.base import Index
 from holoviews.operation.datashader import datashade, bundle_graph, shade, dynspread, rasterize, spread
 from holoviews.operation import decimate
-from bokeh.transform import linear_cmap
 from bokeh.models import HoverTool
 
 import scanpy as sc

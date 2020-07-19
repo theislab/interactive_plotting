@@ -1,4 +1,4 @@
-from ..utils import *
+from interactive_plotting.utils import *
 
 from bokeh.core.properties import Any, Dict, Instance, String
 from bokeh.models import (
